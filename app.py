@@ -736,23 +736,129 @@ def render_textbook_map_png(spec, raw_query=""):
     return buf.getvalue()
 
 # ==============================================================================
-# NCERT/GCERT TEXTBOOK SVG DIAGRAM ENGINE (SHARP GUJARATI CONJUNCTS)
+# NCERT/GCERT TEXTBOOK DIAGRAM ENGINE (CURATED + REALISTIC VECTOR SVG)
 # ==============================================================================
+def get_curated_textbook_svg(query_text):
+    q = (query_text or "").lower()
+    if any(w in q for w in ("કંઠસ્થાન", "કંઠસ્થન", "સ્વરપેટી", "larynx", "laryx", "larnyx", "vocal")):
+        return '''<svg width="740" height="450" viewBox="0 0 740 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="skinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#DBEAFE"/>
+      <stop offset="60%" stop-color="#93C5FD"/>
+      <stop offset="100%" stop-color="#60A5FA"/>
+    </linearGradient>
+    <linearGradient id="cartilageGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#BFDBFE"/>
+      <stop offset="50%" stop-color="#93C5FD"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="handGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E2E8F0"/>
+      <stop offset="100%" stop-color="#CBD5E1"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="740" height="450" rx="12" fill="#FFFFFF"/>
+  <rect x="24" y="20" width="692" height="365" rx="6" fill="#F8FAFC" stroke="#475569" stroke-width="1.8"/>
+
+  <!-- LEFT PANEL: HUMAN HEAD/NECK PROFILE + HAND TOUCHING LARYNX -->
+  <g transform="translate(45, 32)">
+    <path d="M 110,15 
+             C 175,10 220,38 225,75 
+             C 228,88 220,96 226,108 
+             C 234,122 238,130 226,136 
+             C 220,140 224,148 222,154 
+             C 220,160 225,166 220,174 
+             C 214,184 192,192 155,192 
+             C 128,192 118,205 118,232 
+             L 124,335 L 35,335 
+             C 22,275 18,195 30,120 
+             C 40,62 68,20 110,15 Z" 
+          fill="url(#skinGrad)" stroke="#1E3A8A" stroke-width="2.2"/>
+
+    <path d="M 65,330 L 92,225 C 96,208 112,204 114,220 L 92,330" fill="#60A5FA" stroke="#1E3A8A" stroke-width="1.8"/>
+    <line x1="87" y1="242" x2="107" y2="246" stroke="#1E3A8A" stroke-width="1.8"/>
+    <line x1="83" y1="258" x2="103" y2="262" stroke="#1E3A8A" stroke-width="1.8"/>
+    <line x1="79" y1="274" x2="99" y2="278" stroke="#1E3A8A" stroke-width="1.8"/>
+    <line x1="75" y1="290" x2="95" y2="294" stroke="#1E3A8A" stroke-width="1.8"/>
+    <line x1="71" y1="306" x2="91" y2="310" stroke="#1E3A8A" stroke-width="1.8"/>
+
+    <ellipse cx="116" cy="216" rx="7" ry="12" fill="#3B82F6" stroke="#0F172A" stroke-width="1.8"/>
+
+    <path d="M 118,214 C 132,206 148,212 156,222 
+             C 178,228 205,245 202,272 
+             C 198,295 182,315 178,335 
+             L 112,335 
+             C 110,305 112,275 104,252 
+             C 98,236 104,220 118,214 Z" 
+          fill="url(#handGrad)" stroke="#1E293B" stroke-width="2"/>
+    <path d="M 105,232 C 118,226 134,230 142,240" fill="none" stroke="#1E293B" stroke-width="1.8"/>
+    <path d="M 135,236 C 148,248 146,272 136,288" fill="none" stroke="#1E293B" stroke-width="1.8"/>
+    <path d="M 152,226 C 166,238 168,262 160,280" fill="none" stroke="#1E293B" stroke-width="1.6"/>
+
+    <circle cx="117" cy="215" r="3.5" fill="#DC2626"/>
+    <line x1="120" y1="215" x2="215" y2="215" stroke="#0F172A" stroke-width="1.8"/>
+    <text x="222" y="220" font-size="17" font-weight="bold" fill="#0F172A">સ્વરપેટી</text>
+  </g>
+
+  <!-- RIGHT PANEL: ANATOMICAL LARYNX & VOCAL CORDS -->
+  <g transform="translate(395, 55)">
+    <path d="M 35,45 
+             C 28,25 42,15 50,35 
+             C 56,55 62,82 88,88 
+             C 115,94 165,94 192,88 
+             C 218,82 224,55 230,35 
+             C 238,15 252,25 245,45 
+             C 238,75 248,125 242,165 
+             C 236,205 198,238 162,245 
+             C 148,248 142,240 140,235 
+             C 138,240 132,248 118,245 
+             C 82,238 44,205 38,165 
+             C 32,125 42,75 35,45 Z" 
+          fill="url(#cartilageGrad)" stroke="#1E3A8A" stroke-width="2.4"/>
+
+    <path d="M 88,88 C 102,55 178,55 192,88 C 175,102 105,102 88,88 Z" fill="#93C5FD" stroke="#1E3A8A" stroke-width="2"/>
+    <path d="M 102,84 C 118,72 162,72 178,84" fill="#1E293B" stroke="#0F172A" stroke-width="1.5"/>
+
+    <path d="M 85,112 C 95,98 185,98 195,112 C 202,145 182,195 140,212 C 98,195 78,145 85,112 Z" 
+          fill="#EFF6FF" stroke="#1E3A8A" stroke-width="2"/>
+
+    <path d="M 136,112 C 112,135 112,175 138,205 L 138,112 Z" fill="#60A5FA" stroke="#0F172A" stroke-width="2"/>
+    <path d="M 144,112 C 168,135 168,175 142,205 L 142,112 Z" fill="#60A5FA" stroke="#0F172A" stroke-width="2"/>
+    <line x1="140" y1="112" x2="140" y2="206" stroke="#0F172A" stroke-width="2.5"/>
+
+    <line x1="65" y1="275" x2="124" y2="162" stroke="#0F172A" stroke-width="1.8"/>
+    <polygon points="124,162 115,168 122,173" fill="#0F172A"/>
+
+    <line x1="65" y1="275" x2="154" y2="168" stroke="#0F172A" stroke-width="1.8"/>
+    <polygon points="154,168 145,172 151,178" fill="#0F172A"/>
+
+    <text x="65" y="298" text-anchor="middle" font-size="17" font-weight="bold" fill="#0F172A">સ્વરતંતુઓ</text>
+  </g>
+
+  <text x="370" y="422" text-anchor="middle" font-size="18" font-weight="bold" fill="#0F172A">[આકૃતિ 10.1 : મનુષ્યમાં સ્વરપેટી (કંઠસ્થાન)]</text>
+</svg>'''
+    return None
+
 async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=False):
+    if not is_infographic_map:
+        curated = get_curated_textbook_svg(query_text)
+        if curated:
+            return ("svg", curated)
+
     if not HAS_GENAI or not api_keys:
         return None
 
     if not is_infographic_map:
         svg_prompt = (
-            f"Create an accurate, detailed, Indian NCERT / GCERT Class 3-8 Science/Math textbook SVG diagram (width='720' height='440' viewBox='0 0 720 440') for: {query_text}.\n"
+            f"Create a detailed, realistic Indian NCERT / GCERT Class 3-8 Science textbook SVG diagram (width='740' height='450' viewBox='0 0 740 450') for: {query_text}.\n"
             "STRICT RULES:\n"
-            "1. Output ONLY raw <svg width='720' height='440' viewBox='0 0 720 440' xmlns='http://www.w3.org/2000/svg'>...</svg> without markdown fences.\n"
-            "2. White background <rect width='720' height='440' rx='12' fill='#FFFFFF' stroke='#CBD5E1' stroke-width='2'/>.\n"
-            "3. Match the exact NCERT/GCERT textbook diagram layout:\n"
-            "   - If Larynx / કંઠસ્થાન / સ્વરપેટી: draw TWO panels side-by-side inside a frame — Left panel: human side neck profile with a hand touching the throat voice box labeled 'સ્વરપેટી'; Right panel: anatomical open larynx cartilage with two vocal cords inside labeled 'સ્વરતંતુઓ'; Bottom caption: 'આકૃતિ: મનુષ્યમાં સ્વરપેટી (કંઠસ્થાન)'.\n"
-            "   - For any other Science/Math topic: draw realistic, shaded textbook shapes (soft blue, peach, green, pink fills with dark outlines) — NOT plain rectangles.\n"
-            "4. Keep all labels strictly inside x=45..675 and y=40..415 so no text is ever cut off. Use clean Gujarati labels (font-size='15' font-weight='bold' fill='#0F172A').\n"
-            "5. Do NOT put long paragraphs inside the SVG — only clean diagram title, pointer lines, and part names."
+            "1. Output ONLY raw <svg width='740' height='450' viewBox='0 0 740 450' xmlns='http://www.w3.org/2000/svg'>...</svg>.\n"
+            "2. White background <rect width='740' height='450' rx='12' fill='#FFFFFF'/> and inner border <rect x='24' y='20' width='692' height='365' rx='6' fill='#F8FAFC' stroke='#475569' stroke-width='1.8'/>.\n"
+            "3. Draw realistic anatomical/scientific curves using smooth cubic Bezier <path d='... C ...'> with <linearGradient> shading — NEVER draw crude boxes or plain circles.\n"
+            "4. Add pointer lines with arrowheads and clear Gujarati part labels (font-size='16' font-weight='bold' fill='#0F172A') strictly inside x=45..690, y=45..370.\n"
+            "5. Put the textbook caption at the bottom: <text x='370' y='422' text-anchor='middle' font-size='18' font-weight='bold' fill='#0F172A'>[આકૃતિ : ...]</text>."
         )
         for key in api_keys:
             client = get_cached_client(key)
@@ -835,7 +941,7 @@ def wants_any_drawing_or_diagram(text):
         "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "ચિત્ર", "chitra", "chira", "chitran",
         "દોરો", "દોરી", "doro", "dori", "બનાવો", "banavo", "banavi",
         "diagram", "draw", "drawing", "sketch", "image", "picture", "photo", "painting",
-        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં"
+        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "કંઠસ્થન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં"
     ))
 
 def needs_textbook_vision(text):
@@ -1125,7 +1231,7 @@ async def process_teacher_query(clean_q: str, elements: list):
     elif is_taluka_dual:
         visual_instruction = "\n**મહત્વની સૂચના:** ઉપર રાજકીય (વહીવટી) અને ભૌગોલિક નકશો દર્શાવ્યો છે. નીચે તે તાલુકા/વિસ્તારની ભૌગોલિક અને વહીવટી માહિતી મુદ્દાસર ગુજરાતીમાં આપો."
     elif is_drawing_q:
-        visual_instruction = "\n**મહત્વની સૂચના:** ઉપર આકૃતિ/ચિત્ર આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash (`---`, `|||`) વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી ગુજરાતીમાં આપો."
+        visual_instruction = "\n**મહત્વની સૂચના:** ઉપર પાઠ્યપુસ્તકની આકૃતિ આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash (`---`, `|||`) વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી અને કાર્ય ગુજરાતીમાં આપો."
 
     sys_prompt = f"તમે ધોરણ 3 થી 8 ના વિદ્યાર્થીઓ અને શિક્ષકો માટેના ઝડપી અને નિષ્ણાત AI સહાયક છો. જવાબ શુદ્ધ ગુજરાતીમાં, ત્વરિત અને મુદ્દાસર આપો.{visual_instruction}"
     prompt_text = f"{sys_prompt}\n\n{recent_hist}\nપ્રશ્ન: {clean_q}"
