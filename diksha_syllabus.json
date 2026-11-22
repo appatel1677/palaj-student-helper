@@ -1,0 +1,323 @@
+{
+  "ધોરણ 8": {
+    "subjects": {
+      "📐 ગણિત (Mathematics)": {
+        "icon": "📐",
+        "code": "math",
+        "local_pdfs": [
+          "textbook/std8/Std-8_Maths_Gujarati_Medium.pdf"
+        ]
+      },
+      "🔬 વિજ્ઞાન (Science)": {
+        "icon": "🔬",
+        "code": "science",
+        "local_pdfs": [
+          "textbook/std8/Std-8_Science_Gujarati_Medium.pdf"
+        ]
+      },
+      "🌍 સામાજિક વિજ્ઞાન (Social Science)": {
+        "icon": "🌍",
+        "code": "social_science",
+        "local_pdfs": [
+          "textbook/std8/Std-8 Social Science GujaratiMedium.pdf"
+        ]
+      },
+      "📖 ગુજરાતી (Gujarati)": {
+        "icon": "📖",
+        "code": "gujarati",
+        "local_pdfs": [
+          "textbook/std8/Std-8_GUJARATI_FIRSTLanguage.pdf"
+        ]
+      },
+      "🔤 અંગ્રેજી (English)": {
+        "icon": "🔤",
+        "code": "english",
+        "local_pdfs": [
+          "textbook/std8/Std-8 English Second Language 1St Sem.pdf"
+        ]
+      },
+      "🇮🇳 હિન્દી (Hindi)": {
+        "icon": "🇮🇳",
+        "code": "hindi",
+        "local_pdfs": [
+          "textbook/std8/Std-8_Hindi Second Language_1st SEM.pdf"
+        ]
+      },
+      "🕉️ સંસ્કૃત (Sanskrit)": {
+        "icon": "🕉️",
+        "code": "sanskrit",
+        "local_pdfs": [
+          "textbook/std8/Std-8_Sanskrit.pdf"
+        ]
+      },
+      "🧮 વૈદિક ગણિત (Vedic Maths)": {
+        "icon": "🧮",
+        "code": "vedic_math",
+        "local_pdfs": [
+          "textbook/std8/Std-8_વૈદિક ગણિત.pdf"
+        ]
+      },
+      "🎨 સર્વાંગી શિક્ષણ (Allround Education)": {
+        "icon": "🎨",
+        "code": "allround",
+        "local_pdfs": [
+          "textbook/std8/STD_8_Sarvangi_Shikshan.pdf"
+        ]
+      }
+    }
+  },
+  "ધોરણ 7": {
+    "subjects": {
+      "📐 ગણિત (Mathematics)": {
+        "icon": "📐",
+        "code": "math",
+        "local_pdfs": [
+          "textbook/std7/Std-7_Maths_Gujaratimedium.pdf"
+        ]
+      },
+      "🔬 વિજ્ઞાન (Science)": {
+        "icon": "🔬",
+        "code": "science",
+        "local_pdfs": [
+          "textbook/std7/Std 7 Science_Gujarati Medium.pdf"
+        ]
+      },
+      "🌍 સામાજિક વિજ્ઞાન (Social Science)": {
+        "icon": "🌍",
+        "code": "social_science",
+        "local_pdfs": [
+          "textbook/std7/Std-7 Social_Science GujaratiMedium.pdf"
+        ]
+      },
+      "📖 ગુજરાતી (Gujarati)": {
+        "icon": "📖",
+        "code": "gujarati",
+        "local_pdfs": [
+          "textbook/std7/Std-7 Gujarati First Language.pdf"
+        ]
+      },
+      "🔤 અંગ્રેજી (English)": {
+        "icon": "🔤",
+        "code": "english",
+        "local_pdfs": [
+          "textbook/std7/STD_7_English_SL.pdf"
+        ]
+      },
+      "🇮🇳 હિન્દી (Hindi)": {
+        "icon": "🇮🇳",
+        "code": "hindi",
+        "local_pdfs": [
+          "textbook/std7/Std-7 Hindi Second language First Sem.pdf"
+        ]
+      },
+      "🕉️ સંસ્કૃત (Sanskrit)": {
+        "icon": "🕉️",
+        "code": "sanskrit",
+        "local_pdfs": [
+          "textbook/std7/Std-7_Sanskrut_Sem-1-Med-Gujarati.pdf",
+          "textbook/std7/Std-7_Sanskrut_Sem-II_Med-Gujarati.pdf"
+        ]
+      },
+      "🧮 વૈદિક ગણિત (Vedic Maths)": {
+        "icon": "🧮",
+        "code": "vedic_math",
+        "local_pdfs": [
+          "textbook/std7/Std-7_વૈદિક ગણિત.pdf"
+        ]
+      },
+      "🎨 સર્વાંગી શિક્ષણ (Allround Education)": {
+        "icon": "🎨",
+        "code": "allround",
+        "local_pdfs": [
+          "textbook/std7/Std-7_Sarvangi_Shikshan_Gujaratimedium.pdf"
+        ]
+      }
+    }
+  },
+  "ધોરણ 6": {
+    "subjects": {
+      "📐 ગણિત (Mathematics)": {
+        "icon": "📐",
+        "code": "math",
+        "local_pdfs": [
+          "textbook/std6/Std-6_Maths GujaratiMedium.pdf"
+        ]
+      },
+      "🔬 વિજ્ઞાન (Science)": {
+        "icon": "🔬",
+        "code": "science",
+        "local_pdfs": [
+          "textbook/std6/STD_6_Science_GujaratiMedium.pdf"
+        ]
+      },
+      "🌍 સામાજિક વિજ્ઞાન (Social Science)": {
+        "icon": "🌍",
+        "code": "social_science",
+        "local_pdfs": [
+          "textbook/std6/STD_6_Social Science_GujaratiMedium.pdf"
+        ]
+      },
+      "📖 ગુજરાતી (Gujarati)": {
+        "icon": "📖",
+        "code": "gujarati",
+        "local_pdfs": [
+          "textbook/std6/Std-6_Palash_GujaratiMedium.pdf"
+        ]
+      },
+      "🔤 અંગ્રેજી (English)": {
+        "icon": "🔤",
+        "code": "english",
+        "local_pdfs": [
+          "textbook/std6/Std-6_English_SecondLanguage.pdf"
+        ]
+      },
+      "🇮🇳 હિન્દી (Hindi)": {
+        "icon": "🇮🇳",
+        "code": "hindi",
+        "local_pdfs": [
+          "textbook/std6/Std-6_Hindi_Second Language-2nd SEM.pdf",
+          "textbook/std6/Std-6_Hindi_Second lang_first sem.pdf"
+        ]
+      },
+      "🕉️ સંસ્કૃત (Sanskrit)": {
+        "icon": "🕉️",
+        "code": "sanskrit",
+        "local_pdfs": [
+          "textbook/std6/Std 6 Sanskrit_1St SEM.pdf",
+          "textbook/std6/Std 6 Sanskrit_2nd SEM.pdf"
+        ]
+      },
+      "🧮 વૈદિક ગણિત (Vedic Maths)": {
+        "icon": "🧮",
+        "code": "vedic_math",
+        "local_pdfs": [
+          "textbook/std6/Std-6_વૈદિક ગણિત.pdf"
+        ]
+      },
+      "🎨 સર્વાંગી શિક્ષણ (Allround Education)": {
+        "icon": "🎨",
+        "code": "allround",
+        "local_pdfs": [
+          "textbook/std6/Std-6 to 8 ભગવદ્ ગીતા ગુજરાતી માધ્યમ (1).pdf",
+          "textbook/std6/Std-6 to 8 ભગવદ્ ગીતા ગુજરાતી માધ્યમ (2).pdf",
+          "textbook/std6/Std-6_Sarvangi Shikshan_GujaratiMedium.pdf"
+        ]
+      }
+    }
+  },
+  "ધોરણ 5": {
+    "subjects": {
+      "📐 ગણિત (Mathematics)": {
+        "icon": "📐",
+        "code": "math",
+        "local_pdfs": [
+          "textbook/std5/Std-5 Maths Gujarati Medium.pdf"
+        ]
+      },
+      "🌿 પર્યાવરણ (આસપાસ)": {
+        "icon": "🌿",
+        "code": "environment",
+        "local_pdfs": [
+          "textbook/std5/GSEB-Class-5-EVS-Textbook-Gujarati-Medium.pdf"
+        ]
+      },
+      "📖 ગુજરાતી (Gujarati)": {
+        "icon": "📖",
+        "code": "gujarati",
+        "local_pdfs": [
+          "textbook/std5/Std-5 Kekarav Gujarati FirstLanguage.pdf"
+        ]
+      },
+      "🔤 અંગ્રેજી (English)": {
+        "icon": "🔤",
+        "code": "english",
+        "local_pdfs": [
+          "textbook/std5/Std-5 English Second Language.pdf"
+        ]
+      },
+      "🇮🇳 હિન્દી (Hindi)": {
+        "icon": "🇮🇳",
+        "code": "hindi",
+        "local_pdfs": [
+          "textbook/std5/Std-5-Titali_Hindi_SecondLanguage.pdf"
+        ]
+      }
+    }
+  },
+  "ધોરણ 4": {
+    "subjects": {
+      "📐 ગણિત (Mathematics)": {
+        "icon": "📐",
+        "code": "math",
+        "local_pdfs": [
+          "textbook/std4/Std-4_Maths Gujarati Medium.pdf"
+        ]
+      },
+      "🌿 પર્યાવરણ (આસપાસ)": {
+        "icon": "🌿",
+        "code": "environment",
+        "local_pdfs": [
+          "textbook/std4/Std-4-Environment Gujarati Medium.pdf"
+        ]
+      },
+      "📖 ગુજરાતી (Gujarati)": {
+        "icon": "📖",
+        "code": "gujarati",
+        "local_pdfs": [
+          "textbook/std4/Std-4 Kuhu Gujarati First Lang.pdf"
+        ]
+      },
+      "🔤 અંગ્રેજી (English)": {
+        "icon": "🔤",
+        "code": "english",
+        "local_pdfs": [
+          "textbook/std4/Std-4 English_Second Language.pdf"
+        ]
+      },
+      "🇮🇳 હિન્દી (Hindi)": {
+        "icon": "🇮🇳",
+        "code": "hindi",
+        "local_pdfs": [
+          "textbook/std4/Std-4 Hindi Second Language.pdf"
+        ]
+      }
+    }
+  },
+  "ધોરણ 3": {
+    "subjects": {
+      "📐 ગણિત (Mathematics)": {
+        "icon": "📐",
+        "code": "math",
+        "local_pdfs": [
+          "textbook/std3/Std-3_Ganit Mela.pdf"
+        ]
+      },
+      "🌿 પર્યાવરણ (આસપાસ)": {
+        "icon": "🌿",
+        "code": "environment",
+        "local_pdfs": [
+          "textbook/std3/Std-3_Environment Our Wonderful World.pdf"
+        ]
+      },
+      "📖 ગુજરાતી (Gujarati)": {
+        "icon": "📖",
+        "code": "gujarati",
+        "local_pdfs": [
+          "textbook/std3/Std-3 Kalshor GujaratiMedium.pdf"
+        ]
+      },
+      "🔤 અંગ્રેજી (English)": {
+        "icon": "🔤",
+        "code": "english",
+        "local_pdfs": [
+          "textbook/std3/Std-3_English_Second Lang.pdf"
+        ]
+      },
+      "🇮🇳 હિન્દી (Hindi)": {
+        "icon": "🇮🇳",
+        "code": "hindi",
+        "local_pdfs": []
+      }
+    }
+  }
+}
