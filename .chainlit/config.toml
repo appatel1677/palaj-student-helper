@@ -1,0 +1,6 @@
+[features.audio]
+enabled = true
+sample_rate = 24000
+
+[UI]
+name = "Palaj Student Helper"
