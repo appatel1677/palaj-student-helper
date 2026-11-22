@@ -171,7 +171,7 @@ def get_pdf_font():
     global _PDF_FONT_CACHE
     if _PDF_FONT_CACHE:
         return _PDF_FONT_CACHE
-    for p in ["C:/Windows/Fonts/Nirmala.ttf", "C:/Windows/Fonts/Shruti.ttf", "NotoSansGujarati-Regular.ttf"]:
+    for p in ["C:/Windows/Fonts/Nirmala.ttf", "C:/Windows/Fonts/Shruti.ttf", "NotoSansGujarati-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf"]:
         if os.path.exists(p):
             _PDF_FONT_CACHE = p
             return p
@@ -181,7 +181,7 @@ def svg_to_png_bytes(svg_code):
     try:
         import fitz
         doc = fitz.open(stream=svg_code.encode("utf-8"), filetype="svg")
-        pix = doc[0].get_pixmap(dpi=160, alpha=False)
+        pix = doc[0].get_pixmap(dpi=170, alpha=False)
         return pix.tobytes("png")
     except Exception:
         return None
@@ -257,7 +257,7 @@ def format_friendly_error(err_str):
     if "429" in e or "RESOURCE_EXHAUSTED" in e:
         return "API Key નો ફ્રી ક્વોટા પૂરો થઈ ગયો છે. થોડીવાર પછી પ્રયાસ કરો અથવા નવી API Key ઉમેરો."
     if "400" in e and ("API_KEY_INVALID" in e or "API key not valid" in e):
-        return "તમારી GEMINI_API_KEY ખોટી છે. .env ફાઈલમાં તપાસો."
+        return "તમારી GEMINI_API_KEY ખોટી છે. Environment Variables માં તપાસો."
     return f"કનેક્શન સમસ્યા: {e[:140]}"
 
 async def transcribe_gujarati_bytes_async(audio_bytes, mime_type, api_keys, preferred_model="gemini-2.5-flash"):
@@ -729,22 +729,45 @@ def render_textbook_map_png(spec, raw_query=""):
     plt.close(fig)
     return buf.getvalue()
 
+# ==============================================================================
+# DIAGRAM / DRAWING ENGINE (SVG VECTOR DIAGRAM FOR SCIENCE/MATH + IMAGE FALLBACK)
+# ==============================================================================
 async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=False):
     if not HAS_GENAI or not api_keys:
         return None
-    if is_infographic_map:
-        img_prompt = (
-            f"Educational Indian school textbook dual map infographic for: {query_text}. "
-            "Top panel: Political/Administrative map with clean yellow boundary, red location pin, and structured info boxes. "
-            "Bottom panel: Geographical relief map showing green fields, rivers, roads, compass rose (N, S, E, W), and legend box. "
-            "Clean, bright, high-resolution educational poster style."
-        )
-    else:
-        img_prompt = (
-            f"Cute, colorful, vibrant Indian primary school storybook illustration of: {query_text}. "
-            "Expressive friendly character, lush bright natural background, clean smooth 3D-cartoon textbook art style, high resolution."
-        )
 
+    # ૧. પ્રથમ વિજ્ઞાન/ગણિત/ચિત્ર માટે ચોખ્ખો લેબલવાળો SVG ડાયાગ્રામ બનાવી PNG માં ફેરવો (100% Free & Fast)
+    if not is_infographic_map:
+        svg_prompt = (
+            f"Create a clean, well-labeled, colorful Indian school textbook SVG diagram (width='680' height='420' viewBox='0 0 680 420') for: {query_text}. "
+            "Rules:\n"
+            "1. Start with <svg width='680' height='420' viewBox='0 0 680 420' xmlns='http://www.w3.org/2000/svg'> and a white background <rect width='680' height='420' rx='14' fill='#FFFFFF'/>.\n"
+            "2. Draw clear, accurate, colorful vector shapes (path, rect, circle, ellipse, polygon, line) with stroke='#1E293B' stroke-width='2'.\n"
+            "3. Add clear pointer lines and neat labels (prefer English + Gujarati or clear labels, font-family='Noto Sans Gujarati, sans-serif' font-size='14' font-weight='bold' fill='#0F172A').\n"
+            "4. Include a neat title at the top (y='30').\n"
+            "5. Output ONLY raw <svg>...</svg> code without markdown fences or extra text."
+        )
+        for key in api_keys:
+            client = get_cached_client(key)
+            models_list = await asyncio.to_thread(get_working_models_for_key, key, "gemini-2.5-flash")
+            for mod in models_list:
+                try:
+                    res = await client.aio.models.generate_content(model=mod, contents=[svg_prompt])
+                    raw = (res.text or "").strip()
+                    m = re.search(r"(<svg[\s\S]*?</svg>)", raw, flags=re.IGNORECASE)
+                    if m:
+                        png_data = svg_to_png_bytes(m.group(1))
+                        if png_data:
+                            return png_data
+                except Exception:
+                    pass
+
+    # ૨. Fallback: Image Generation Model (જો Paid Key ઉપલબ્ધ હોય તો)
+    img_prompt = (
+        f"Educational Indian school textbook dual map infographic for: {query_text}."
+        if is_infographic_map else
+        f"Clean educational Indian school textbook diagram with clear labels for: {query_text}."
+    )
     for key in api_keys:
         client = get_cached_client(key)
         for nb_model in DEFAULT_IMAGE_MODELS:
@@ -808,7 +831,7 @@ def wants_any_drawing_or_diagram(text):
         "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "ચિત્ર", "chitra", "chira", "chitran",
         "દોરો", "દોરી", "doro", "dori", "બનાવો", "banavo", "banavi",
         "diagram", "draw", "drawing", "sketch", "image", "picture", "photo", "painting",
-        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ"
+        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "larynx", "હૃદય", "ફેફસાં"
     ))
 
 def needs_textbook_vision(text):
@@ -902,7 +925,6 @@ def extract_or_build_map_bytes(content, is_map_query=False, raw_query=""):
         clean_text = re.sub(r"```map_json[\s\S]*?```", "", clean_text)
     if is_map_query and not map_img_bytes:
         map_img_bytes = render_textbook_map_png(detect_default_map_spec(raw_query), raw_query=raw_query)
-    clean_text = re.sub(r"```(?!svg|xml|html)[a-zA-Z]*\n[\s\S]*?```", "", clean_text)
     return map_img_bytes, clean_text
 
 def get_quick_actions():
@@ -1049,7 +1071,7 @@ async def process_teacher_query(clean_q: str, elements: list):
     cl.user_session.set("messages", messages)
 
     if not HAS_GENAI or not api_keys:
-        await cl.Message(content="⚠️ `.env` ફાઈલમાં `GEMINI_API_KEY` દાખલ કરો.").send()
+        await cl.Message(content="⚠️ Environment Variables માં `GEMINI_API_KEY` દાખલ કરો.").send()
         return
 
     user_att_parts = []
@@ -1099,7 +1121,7 @@ async def process_teacher_query(clean_q: str, elements: list):
     elif is_taluka_dual:
         visual_instruction = "\n**મહત્વની સૂચના:** ઉપર રાજકીય (વહીવટી) અને ભૌગોલિક નકશો દર્શાવ્યો છે. નીચે તે તાલુકા/વિસ્તારની ભૌગોલિક અને વહીવટી માહિતી મુદ્દાસર ગુજરાતીમાં આપો."
     elif is_drawing_q:
-        visual_instruction = "\n**મહત્વની સૂચના:** ઉપર સુંદર રંગીન ચિત્ર દર્શાવ્યું છે. નીચે વિદ્યાર્થીઓને ગમે તેવો સરળ અને રસપ્રદ પરિચય ગુજરાતીમાં આપો."
+        visual_instruction = "\n**મહત્વની સૂચના:** ઉપર આકૃતિ/ચિત્ર આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash (`---`, `|||`) વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી ગુજરાતીમાં આપો."
 
     sys_prompt = f"તમે ધોરણ 3 થી 8 ના વિદ્યાર્થીઓ અને શિક્ષકો માટેના ઝડપી અને નિષ્ણાત AI સહાયક છો. જવાબ શુદ્ધ ગુજરાતીમાં, ત્વરિત અને મુદ્દાસર આપો.{visual_instruction}"
     prompt_text = f"{sys_prompt}\n\n{recent_hist}\nપ્રશ્ન: {clean_q}"
@@ -1147,7 +1169,6 @@ async def process_teacher_query(clean_q: str, elements: list):
         )
     else:
         clean_text = re.sub(r"```map_json[\s\S]*?```", "", answer_text)
-        clean_text = re.sub(r"```(?!svg|xml|html)[a-zA-Z]*\n[\s\S]*?```", "", clean_text)
 
     msg_elements = []
     final_img = generated_img_bytes or computed_map_bytes
