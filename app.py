@@ -186,6 +186,12 @@ def svg_to_png_bytes(svg_code):
     except Exception:
         return None
 
+def make_svg_or_png_element(svg_code, name="diagram"):
+    clean_svg = svg_code.strip()
+    if "xmlns=" not in clean_svg:
+        clean_svg = clean_svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
+    return cl.Image(name=f"{name}.svg", content=clean_svg.encode("utf-8"), mime="image/svg+xml", display="inline")
+
 def build_pdf_bytes(messages):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=14)
@@ -730,22 +736,23 @@ def render_textbook_map_png(spec, raw_query=""):
     return buf.getvalue()
 
 # ==============================================================================
-# DIAGRAM / DRAWING ENGINE (SVG VECTOR DIAGRAM FOR SCIENCE/MATH + IMAGE FALLBACK)
+# NCERT/GCERT TEXTBOOK SVG DIAGRAM ENGINE (SHARP GUJARATI CONJUNCTS)
 # ==============================================================================
 async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=False):
     if not HAS_GENAI or not api_keys:
         return None
 
-    # ૧. પ્રથમ વિજ્ઞાન/ગણિત/ચિત્ર માટે ચોખ્ખો લેબલવાળો SVG ડાયાગ્રામ બનાવી PNG માં ફેરવો (100% Free & Fast)
     if not is_infographic_map:
         svg_prompt = (
-            f"Create a clean, well-labeled, colorful Indian school textbook SVG diagram (width='680' height='420' viewBox='0 0 680 420') for: {query_text}. "
-            "Rules:\n"
-            "1. Start with <svg width='680' height='420' viewBox='0 0 680 420' xmlns='http://www.w3.org/2000/svg'> and a white background <rect width='680' height='420' rx='14' fill='#FFFFFF'/>.\n"
-            "2. Draw clear, accurate, colorful vector shapes (path, rect, circle, ellipse, polygon, line) with stroke='#1E293B' stroke-width='2'.\n"
-            "3. Add clear pointer lines and neat labels (prefer English + Gujarati or clear labels, font-family='Noto Sans Gujarati, sans-serif' font-size='14' font-weight='bold' fill='#0F172A').\n"
-            "4. Include a neat title at the top (y='30').\n"
-            "5. Output ONLY raw <svg>...</svg> code without markdown fences or extra text."
+            f"Create an accurate, detailed, Indian NCERT / GCERT Class 3-8 Science/Math textbook SVG diagram (width='720' height='440' viewBox='0 0 720 440') for: {query_text}.\n"
+            "STRICT RULES:\n"
+            "1. Output ONLY raw <svg width='720' height='440' viewBox='0 0 720 440' xmlns='http://www.w3.org/2000/svg'>...</svg> without markdown fences.\n"
+            "2. White background <rect width='720' height='440' rx='12' fill='#FFFFFF' stroke='#CBD5E1' stroke-width='2'/>.\n"
+            "3. Match the exact NCERT/GCERT textbook diagram layout:\n"
+            "   - If Larynx / કંઠસ્થાન / સ્વરપેટી: draw TWO panels side-by-side inside a frame — Left panel: human side neck profile with a hand touching the throat voice box labeled 'સ્વરપેટી'; Right panel: anatomical open larynx cartilage with two vocal cords inside labeled 'સ્વરતંતુઓ'; Bottom caption: 'આકૃતિ: મનુષ્યમાં સ્વરપેટી (કંઠસ્થાન)'.\n"
+            "   - For any other Science/Math topic: draw realistic, shaded textbook shapes (soft blue, peach, green, pink fills with dark outlines) — NOT plain rectangles.\n"
+            "4. Keep all labels strictly inside x=45..675 and y=40..415 so no text is ever cut off. Use clean Gujarati labels (font-size='15' font-weight='bold' fill='#0F172A').\n"
+            "5. Do NOT put long paragraphs inside the SVG — only clean diagram title, pointer lines, and part names."
         )
         for key in api_keys:
             client = get_cached_client(key)
@@ -756,17 +763,14 @@ async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=
                     raw = (res.text or "").strip()
                     m = re.search(r"(<svg[\s\S]*?</svg>)", raw, flags=re.IGNORECASE)
                     if m:
-                        png_data = svg_to_png_bytes(m.group(1))
-                        if png_data:
-                            return png_data
+                        return ("svg", m.group(1))
                 except Exception:
                     pass
 
-    # ૨. Fallback: Image Generation Model (જો Paid Key ઉપલબ્ધ હોય તો)
     img_prompt = (
         f"Educational Indian school textbook dual map infographic for: {query_text}."
         if is_infographic_map else
-        f"Clean educational Indian school textbook diagram with clear labels for: {query_text}."
+        f"Clean educational Indian NCERT school textbook diagram with clear labels for: {query_text}."
     )
     for key in api_keys:
         client = get_cached_client(key)
@@ -780,7 +784,7 @@ async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=
                 for cand in getattr(res, "candidates", []) or []:
                     for part in getattr(cand.content, "parts", []) or []:
                         if getattr(part, "inline_data", None) and getattr(part.inline_data, "data", None):
-                            return part.inline_data.data
+                            return ("png", part.inline_data.data)
             except Exception:
                 pass
     return None
@@ -831,7 +835,7 @@ def wants_any_drawing_or_diagram(text):
         "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "ચિત્ર", "chitra", "chira", "chitran",
         "દોરો", "દોરી", "doro", "dori", "બનાવો", "banavo", "banavi",
         "diagram", "draw", "drawing", "sketch", "image", "picture", "photo", "painting",
-        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "larynx", "હૃદય", "ફેફસાં"
+        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં"
     ))
 
 def needs_textbook_vision(text):
@@ -1160,10 +1164,12 @@ async def process_teacher_query(clean_q: str, elements: list):
         await msg.update()
         return
 
-    generated_img_bytes = await img_task if img_task else None
+    raw_drawing = await img_task if img_task else None
+    generated_svg_code = raw_drawing[1] if (isinstance(raw_drawing, tuple) and raw_drawing[0] == "svg") else None
+    generated_img_bytes = raw_drawing[1] if (isinstance(raw_drawing, tuple) and raw_drawing[0] == "png") else (raw_drawing if isinstance(raw_drawing, bytes) else None)
 
     computed_map_bytes, clean_text = (None, answer_text)
-    if is_map_q and not generated_img_bytes:
+    if is_map_q and not generated_img_bytes and not generated_svg_code:
         computed_map_bytes, clean_text = await asyncio.to_thread(
             extract_or_build_map_bytes, answer_text, True, clean_q
         )
@@ -1171,13 +1177,12 @@ async def process_teacher_query(clean_q: str, elements: list):
         clean_text = re.sub(r"```map_json[\s\S]*?```", "", answer_text)
 
     msg_elements = []
-    final_img = generated_img_bytes or computed_map_bytes
-    if final_img:
-        msg_elements.append(cl.Image(name="palaj_visual.png", content=final_img, display="inline"))
+    if generated_svg_code:
+        msg_elements.append(make_svg_or_png_element(generated_svg_code, "palaj_diagram"))
+    elif generated_img_bytes or computed_map_bytes:
+        msg_elements.append(cl.Image(name="palaj_visual.png", content=(generated_img_bytes or computed_map_bytes), display="inline"))
     elif math_svg_code:
-        png_svg = svg_to_png_bytes(math_svg_code)
-        if png_svg:
-            msg_elements.append(cl.Image(name="math_diagram.png", content=png_svg, display="inline"))
+        msg_elements.append(make_svg_or_png_element(math_svg_code, "math_diagram"))
 
     badge = ""
     if is_map_q:
@@ -1195,6 +1200,6 @@ async def process_teacher_query(clean_q: str, elements: list):
         "content": answer_text,
         "map_bytes": computed_map_bytes,
         "image_bytes": generated_img_bytes,
-        "math_svg": math_svg_code,
+        "math_svg": generated_svg_code or math_svg_code,
     })
     cl.user_session.set("messages", messages)
