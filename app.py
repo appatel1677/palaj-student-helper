@@ -1,6 +1,8 @@
 import os
-import glob
-import sqlite3
+import re
+import io
+import json
+import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -8,160 +10,41 @@ os.makedirs(".files", exist_ok=True)
 os.makedirs("geo_cache", exist_ok=True)
 
 import chainlit as cl
-from chainlit.data.sql_alchemy import SQLAlchemyDataLayer
 from chainlit.input_widget import Select
-import json, io, re, math, asyncio, urllib.request, urllib.parse
 from PIL import Image
-from fpdf import FPDF
+from google import genai
+from google.genai import types
 
-# ==============================================================================
-# AUTO-CREATE SQLITE TABLES FOR CHAINLIT LEFT SIDEBAR (CHAT HISTORY)
-# ==============================================================================
-DB_FILE = os.path.abspath("chat_history.db")
-
-def init_chainlit_sqlite_db():
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.executescript("""
-    CREATE TABLE IF NOT EXISTS users (
-        "id" TEXT PRIMARY KEY,
-        "identifier" TEXT NOT NULL UNIQUE,
-        "metadata" TEXT NOT NULL,
-        "createdAt" TEXT
-    );
-    CREATE TABLE IF NOT EXISTS threads (
-        "id" TEXT PRIMARY KEY,
-        "createdAt" TEXT,
-        "name" TEXT,
-        "userId" TEXT,
-        "userIdentifier" TEXT,
-        "tags" TEXT,
-        "metadata" TEXT,
-        FOREIGN KEY ("userId") REFERENCES users("id") ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS steps (
-        "id" TEXT PRIMARY KEY,
-        "name" TEXT NOT NULL,
-        "type" TEXT NOT NULL,
-        "threadId" TEXT NOT NULL,
-        "parentId" TEXT,
-        "streaming" BOOLEAN NOT NULL,
-        "waitForAnswer" BOOLEAN,
-        "isError" BOOLEAN,
-        "metadata" TEXT,
-        "tags" TEXT,
-        "input" TEXT,
-        "output" TEXT,
-        "createdAt" TEXT,
-        "start" TEXT,
-        "end" TEXT,
-        "generation" TEXT,
-        "showInput" TEXT,
-        "language" TEXT,
-        "indent" INTEGER,
-        "defaultOpen" BOOLEAN,
-        "autoCollapse" BOOLEAN,
-        FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS elements (
-        "id" TEXT PRIMARY KEY,
-        "threadId" TEXT,
-        "type" TEXT,
-        "url" TEXT,
-        "chainlitKey" TEXT,
-        "name" TEXT NOT NULL,
-        "display" TEXT,
-        "objectKey" TEXT,
-        "size" TEXT,
-        "page" INTEGER,
-        "language" TEXT,
-        "forId" TEXT,
-        "mime" TEXT,
-        "props" TEXT,
-        FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS feedbacks (
-        "id" TEXT PRIMARY KEY,
-        "forId" TEXT NOT NULL,
-        "threadId" TEXT NOT NULL,
-        "value" INTEGER NOT NULL,
-        "comment" TEXT,
-        FOREIGN KEY ("threadId") REFERENCES threads("id") ON DELETE CASCADE
-    );
-    """)
-    try:
-        cur.execute('ALTER TABLE steps ADD COLUMN "autoCollapse" BOOLEAN')
-    except Exception:
-        pass
-    conn.commit()
-    conn.close()
+# અલગ-અલગ મોડ્યુલ્સ ઈમ્પોર્ટ કરો
+from db_and_pdf import (
+    init_chainlit_sqlite_db,
+    build_sqlalchemy_data_layer,
+    get_pdf_font,
+    make_svg_element,
+    build_pdf_bytes,
+)
+from graph_engine import wants_graph, extract_or_build_graph_bytes
+from map_engine import wants_map, load_real_geojson, extract_or_build_map_bytes
+from drawing_engine import (
+    wants_any_drawing_or_diagram,
+    build_math_fraction_svg,
+    generate_clean_drawing_async,
+)
 
 init_chainlit_sqlite_db()
 
-class LocalFileStorageProvider:
-    def __init__(self, base_dir=".files"):
-        self.base_dir = os.path.abspath(base_dir)
-        os.makedirs(self.base_dir, exist_ok=True)
-
-    async def upload_file(self, object_key: str, data: bytes | str, mime: str = "application/octet-stream", overwrite: bool = True, content_disposition: str | None = None):
-        full_path = os.path.join(self.base_dir, object_key.replace("/", os.sep))
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        raw = data.encode("utf-8") if isinstance(data, str) else data
-        with open(full_path, "wb") as f:
-            f.write(raw)
-        return {"object_key": object_key, "url": f"/files/{object_key}"}
-
-    async def delete_file(self, object_key: str) -> bool:
-        full_path = os.path.join(self.base_dir, object_key.replace("/", os.sep))
-        if os.path.exists(full_path):
-            os.remove(full_path)
-            return True
-        return False
-
-    async def get_read_url(self, object_key: str) -> str:
-        return f"/files/{object_key}"
-
 @cl.data_layer
 def get_data_layer():
-    db_url = f"sqlite+aiosqlite:///{DB_FILE.replace(chr(92), '/')}"
-    return SQLAlchemyDataLayer(conninfo=db_url, storage_provider=LocalFileStorageProvider(".files"))
+    return build_sqlalchemy_data_layer()
 
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
     ident = (username or "palaj@school.com").strip()
     return cl.User(identifier=ident, metadata={"role": "teacher"})
 
-try:
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    from matplotlib import font_manager
-    HAS_MPL = True
-except ImportError:
-    HAS_MPL = False
-
-try:
-    from google import genai
-    from google.genai import types
-    HAS_GENAI = True
-except ImportError:
-    HAS_GENAI = False
-
-ACTIVE_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-]
-
-NANO_BANANA_MODELS = [
-    "gemini-2.5-flash-image",
-    "gemini-2.0-flash-exp-image-generation",
-]
-
+ACTIVE_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 _CLIENT_CACHE = {}
 _KEY_MODELS_CACHE = {}
-_GEO_MEM_CACHE = {}
-_PDF_FONT_CACHE = None
 _SYLLABUS_CACHE = None
 
 def get_api_keys():
@@ -192,125 +75,6 @@ def get_working_models_for_key(api_key, preferred_model="gemini-2.5-flash"):
     _KEY_MODELS_CACHE[cache_key] = ordered[:4]
     return _KEY_MODELS_CACHE[cache_key]
 
-def get_pdf_font():
-    global _PDF_FONT_CACHE
-    if _PDF_FONT_CACHE and os.path.exists(_PDF_FONT_CACHE):
-        return _PDF_FONT_CACHE
-
-    candidates = [
-        "NotoSansGujarati-Regular.ttf",
-        "C:/Windows/Fonts/Nirmala.ttf",
-        "C:/Windows/Fonts/Shruti.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansGujarati-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSerifGujarati-Regular.ttf",
-    ]
-    for p in candidates:
-        if os.path.exists(p):
-            _PDF_FONT_CACHE = p
-            return p
-
-    for found in glob.glob("/usr/share/fonts/**/*Gujarati*.ttf", recursive=True):
-        if os.path.exists(found):
-            _PDF_FONT_CACHE = found
-            return found
-
-    local_dl = os.path.abspath("geo_cache/NotoSansGujarati-Regular.ttf")
-    if os.path.exists(local_dl):
-        _PDF_FONT_CACHE = local_dl
-        return local_dl
-    try:
-        url = "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansGujarati/NotoSansGujarati-Regular.ttf"
-        urllib.request.urlretrieve(url, local_dl)
-        if os.path.exists(local_dl) and os.path.getsize(local_dl) > 10000:
-            _PDF_FONT_CACHE = local_dl
-            return local_dl
-    except Exception:
-        pass
-
-    return None
-
-def svg_to_png_bytes(svg_code):
-    try:
-        import fitz
-        doc = fitz.open(stream=svg_code.encode("utf-8"), filetype="svg")
-        pix = doc[0].get_pixmap(dpi=170, alpha=False)
-        return pix.tobytes("png")
-    except Exception:
-        return None
-
-def make_svg_or_png_element(svg_code, name="diagram"):
-    clean_svg = svg_code.strip()
-    if "xmlns=" not in clean_svg:
-        clean_svg = clean_svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
-    return cl.Image(name=f"{name}.svg", content=clean_svg.encode("utf-8"), mime="image/svg+xml", display="inline")
-
-def build_pdf_bytes(messages):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=14)
-    try:
-        pdf.set_text_shaping(True)
-    except Exception:
-        pass
-    font_path = get_pdf_font()
-    base_font = "Gujarati" if font_path else "helvetica"
-    if font_path:
-        pdf.add_font("Gujarati", "", font_path)
-        pdf.add_font("Gujarati", "B", font_path)
-    pdf.add_page()
-    pdf.set_font(base_font, "B", 15)
-    pdf.set_text_color(30, 58, 138)
-    pdf.cell(0, 10, "Standard 3 to 8 Smart AI Palaj Student Helper - Notes", ln=True, align="C")
-    pdf.set_draw_color(147, 197, 253)
-    pdf.line(12, pdf.get_y(), 198, pdf.get_y())
-    pdf.ln(4)
-
-    for m in messages:
-        is_user = m["role"] == "user"
-        pdf.set_font(base_font, "B", 11)
-        pdf.set_text_color(185, 28, 28) if is_user else pdf.set_text_color(15, 23, 42)
-        pdf.cell(0, 7, ("વિદ્યાર્થી / શિક્ષક પ્રશ્ન:" if is_user else "સ્માર્ટ AI શિક્ષક જવાબ:"), ln=True)
-
-        vis_bytes = m.get("graph_bytes") or m.get("map_bytes") or m.get("image_bytes")
-        if not vis_bytes and m.get("math_svg"):
-            vis_bytes = svg_to_png_bytes(m["math_svg"])
-        if not vis_bytes and "<svg" in m.get("content", "").lower():
-            svg_m = re.search(r"(<svg[\s\S]*?</svg>)", m["content"], flags=re.IGNORECASE)
-            if svg_m:
-                vis_bytes = svg_to_png_bytes(svg_m.group(1))
-
-        if vis_bytes:
-            try:
-                pil_im = Image.open(io.BytesIO(vis_bytes)).convert("RGB")
-                img_buf = io.BytesIO()
-                pil_im.save(img_buf, format="JPEG", quality=88)
-                img_buf.seek(0)
-                aspect = pil_im.height / max(pil_im.width, 1)
-                disp_w = 176
-                disp_h = min(disp_w * aspect, 125)
-                if pdf.get_y() + disp_h > 275:
-                    pdf.add_page()
-                pdf.image(img_buf, x=17, w=disp_w, h=disp_h)
-                pdf.ln(3)
-            except Exception:
-                pass
-
-        pdf.set_font(base_font, "", 10.5)
-        pdf.set_text_color(30, 41, 59)
-        clean_txt = re.sub(r"```(?:svg|xml|html)?\s*<svg[\s\S]*?</svg>\s*```", "", m["content"], flags=re.IGNORECASE)
-        clean_txt = re.sub(r"<svg[\s\S]*?</svg>", "", clean_txt, flags=re.IGNORECASE)
-        clean_txt = re.sub(r"```(?:map_json|graph_json|village_map_json)[\s\S]*?```", "", clean_txt)
-        clean_txt = re.sub(r"<[^>]+>", "", clean_txt)
-        clean_txt = clean_txt.replace("**", "").replace("###", "").replace("##", "").strip()
-        if clean_txt:
-            pdf.multi_cell(0, 6.2, clean_txt)
-        pdf.ln(3)
-        pdf.set_draw_color(226, 232, 240)
-        pdf.line(14, pdf.get_y(), 196, pdf.get_y())
-        pdf.ln(3)
-
-    return bytes(pdf.output())
-
 def format_friendly_error(err_str):
     e = str(err_str)
     if "429" in e or "RESOURCE_EXHAUSTED" in e:
@@ -330,922 +94,6 @@ def load_syllabus():
     _SYLLABUS_CACHE = {}
     return _SYLLABUS_CACHE
 
-# ==============================================================================
-# 1. SCHOOL GRAPH PAPER & CHART ENGINE
-# ==============================================================================
-def render_school_graph_png(spec):
-    if not HAS_MPL:
-        return None
-    font_path = get_pdf_font()
-    if font_path:
-        try:
-            font_manager.fontManager.addfont(font_path)
-            prop_name = font_manager.FontProperties(fname=font_path).get_name()
-            plt.rcParams["font.sans-serif"] = [prop_name, "DejaVu Sans"]
-            plt.rcParams["font.family"] = "sans-serif"
-            plt.rcParams["axes.unicode_minus"] = False
-        except Exception:
-            pass
-
-    fp_title = font_manager.FontProperties(fname=font_path, size=13.5, weight="bold") if font_path else None
-    fp_sub = font_manager.FontProperties(fname=font_path, size=10.5, weight="bold") if font_path else None
-    fp_lbl = font_manager.FontProperties(fname=font_path, size=9.2, weight="bold") if font_path else None
-    fp_small = font_manager.FontProperties(fname=font_path, size=8.2) if font_path else None
-
-    gtype = str(spec.get("type", "line")).lower()
-    title = str(spec.get("title", "ગણિત - આલેખ (Graph)")).strip()
-    x_label = str(spec.get("x_label", "X-અક્ષ")).strip()
-    y_label = str(spec.get("y_label", "Y-અક્ષ")).strip()
-    scale_text = str(spec.get("scale", "")).strip()
-    x_vals = spec.get("x") or []
-    y_vals = spec.get("y") or []
-
-    if not x_vals or not y_vals:
-        return None
-
-    fig = plt.figure(figsize=(10.5, 6.8), dpi=170)
-    fig.patch.set_facecolor("#F8FAFC")
-
-    ax = fig.add_axes([0.11, 0.14, 0.83, 0.72])
-    ax.set_facecolor("#F0FDF4")
-
-    fig.text(0.52, 0.94, title, ha="center", va="center", color="#1E3A8A", fontproperties=fp_title)
-    if scale_text:
-        fig.text(0.52, 0.895, f"પ્રમાણમાપ: {scale_text}", ha="center", va="center", color="#B91C1C", fontproperties=fp_sub)
-
-    if gtype == "pie":
-        ax.clear()
-        ax.set_facecolor("#FFFFFF")
-        nums = [float(v) for v in y_vals]
-        labels = [str(v) for v in x_vals]
-        colors = ["#FDE047", "#38BDF8", "#F472B6", "#4ADE80", "#FB923C", "#A78BFA", "#2DD4BF"]
-        wedges, texts, autotexts = ax.pie(
-            nums, labels=labels, autopct="%1.1f%%", startangle=90,
-            colors=colors[:len(nums)], wedgeprops=dict(edgecolor="#1E293B", linewidth=1.2)
-        )
-        for t in texts:
-            if fp_lbl:
-                t.set_fontproperties(fp_lbl)
-        for at in autotexts:
-            at.set_fontsize(8.5)
-            at.set_fontweight("bold")
-        ax.axis("equal")
-
-    elif gtype == "bar":
-        labels = [str(v) for v in x_vals]
-        nums = [float(v) for v in y_vals]
-        bars = ax.bar(labels, nums, color="#3B82F6", edgecolor="#1E3A8A", linewidth=1.3, width=0.52, zorder=4)
-        ax.grid(True, which="major", axis="y", color="#86EFAC", linestyle="-", linewidth=1.0, zorder=1)
-        ax.minorticks_on()
-        ax.grid(True, which="minor", axis="y", color="#BBF7D0", linestyle=":", linewidth=0.7, zorder=1)
-        for bar, val in zip(bars, nums):
-            disp = int(val) if val == int(val) else round(val, 2)
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(nums) * 0.02, str(disp),
-                    ha="center", va="bottom", color="#0F172A", fontproperties=fp_lbl, zorder=5)
-        ax.set_ylim(0, max(nums) * 1.18 if max(nums) > 0 else 10)
-        for lbl in ax.get_xticklabels() + ax.get_yticklabels():
-            if fp_small:
-                lbl.set_fontproperties(fp_small)
-
-    else:
-        try:
-            xs = [float(v) for v in x_vals]
-            is_numeric_x = True
-        except Exception:
-            xs = list(range(len(x_vals)))
-            is_numeric_x = False
-
-        ys = [float(v) for v in y_vals]
-
-        ax.minorticks_on()
-        ax.grid(True, which="major", color="#22C55E", linestyle="-", linewidth=1.0, alpha=0.65, zorder=1)
-        ax.grid(True, which="minor", color="#86EFAC", linestyle="-", linewidth=0.55, alpha=0.55, zorder=1)
-
-        if gtype != "points":
-            ax.plot(xs, ys, color="#DC2626", linewidth=2.5, zorder=4)
-
-        ax.scatter(xs, ys, s=68, color="#1D4ED8", edgecolor="#FFFFFF", linewidth=1.3, zorder=5)
-
-        for idx_p, (px, py) in enumerate(zip(xs, ys)):
-            x_disp = int(px) if (is_numeric_x and px == int(px)) else (px if is_numeric_x else x_vals[idx_p])
-            y_disp = int(py) if py == int(py) else round(py, 2)
-            ax.annotate(
-                f"({x_disp}, {y_disp})",
-                (px, py),
-                textcoords="offset points",
-                xytext=(0, 9),
-                ha="center",
-                color="#0F172A",
-                fontproperties=fp_small,
-                bbox=dict(boxstyle="round,pad=0.15", facecolor="#FFFFFF", edgecolor="#94A3B8", alpha=0.88),
-                zorder=6
-            )
-
-        if not is_numeric_x:
-            ax.set_xticks(xs)
-            ax.set_xticklabels([str(v) for v in x_vals])
-
-        x_max = max(xs) if xs else 10
-        y_max = max(ys) if ys else 10
-        x_min = min(0, min(xs)) if is_numeric_x else -0.5
-        y_min = min(0, min(ys))
-        ax.set_xlim(x_min, x_max * 1.15 if x_max > 0 else 10)
-        ax.set_ylim(y_min, y_max * 1.18 if y_max > 0 else 10)
-
-        for lbl in ax.get_xticklabels() + ax.get_yticklabels():
-            if fp_small:
-                lbl.set_fontproperties(fp_small)
-
-    if gtype != "pie":
-        ax.set_xlabel(x_label, color="#0F172A", fontproperties=fp_lbl, labelpad=8)
-        ax.set_ylabel(y_label, color="#0F172A", fontproperties=fp_lbl, labelpad=8)
-        for spine in ["bottom", "left"]:
-            ax.spines[spine].set_color("#0F172A")
-            ax.spines[spine].set_linewidth(1.8)
-        for spine in ["top", "right"]:
-            ax.spines[spine].set_color("#64748B")
-            ax.spines[spine].set_linewidth(1.0)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=170)
-    plt.close(fig)
-    return buf.getvalue()
-
-def extract_or_build_graph_bytes(content):
-    graph_img_bytes = None
-    clean_text = content
-    if "```graph_json" in clean_text:
-        m = re.search(r"```graph_json\s*([\s\S]*?)```", clean_text)
-        if m:
-            try:
-                spec = json.loads(m.group(1).strip())
-                graph_img_bytes = render_school_graph_png(spec)
-            except Exception:
-                pass
-        clean_text = re.sub(r"```graph_json[\s\S]*?```", "", clean_text)
-    return graph_img_bytes, clean_text
-
-# ==============================================================================
-# 2. REAL GIS MAP ENGINE + OSM DISTRICT BOUNDARIES + AUTO YELLOW POLYGON
-# ==============================================================================
-GUJ_DIST_KEYWORDS = {
-    "મહેસાણા": ("મહેસાણા", "Mehsana, Gujarat, India"),
-    "mahesana": ("મહેસાણા", "Mehsana, Gujarat, India"),
-    "mehsana": ("મહેસાણા", "Mehsana, Gujarat, India"),
-    "બનાસકાંઠા": ("બનાસકાંઠા", "Banaskantha, Gujarat, India"),
-    "banaskantha": ("બનાસકાંઠા", "Banaskantha, Gujarat, India"),
-    "પાટણ": ("પાટણ", "Patan district, Gujarat, India"),
-    "patan": ("પાટણ", "Patan district, Gujarat, India"),
-    "કચ્છ": ("કચ્છ", "Kutch, Gujarat, India"),
-    "kutch": ("કચ્છ", "Kutch, Gujarat, India"),
-    "સાબરકાંઠા": ("સાબરકાંઠા", "Sabarkantha, Gujarat, India"),
-    "sabarkantha": ("સાબરકાંઠા", "Sabarkantha, Gujarat, India"),
-    "અરવલ્લી": ("અરવલ્લી", "Aravalli, Gujarat, India"),
-    "aravalli": ("અરવલ્લી", "Aravalli, Gujarat, India"),
-    "ગાંધીનગર": ("ગાંધીનગર", "Gandhinagar district, Gujarat, India"),
-    "gandhinagar": ("ગાંધીનગર", "Gandhinagar district, Gujarat, India"),
-    "અમદાવાદ": ("અમદાવાદ", "Ahmedabad district, Gujarat, India"),
-    "ahmedabad": ("અમદાવાદ", "Ahmedabad district, Gujarat, India"),
-    "ખેડા": ("ખેડા", "Kheda, Gujarat, India"),
-    "kheda": ("ખેડા", "Kheda, Gujarat, India"),
-    "આણંદ": ("આણંદ", "Anand district, Gujarat, India"),
-    "anand": ("આણંદ", "Anand district, Gujarat, India"),
-    "વડોદરા": ("વડોદરા", "Vadodara district, Gujarat, India"),
-    "vadodara": ("વડોદરા", "Vadodara district, Gujarat, India"),
-    "સુરત": ("સુરત", "Surat district, Gujarat, India"),
-    "surat": ("સુરત", "Surat district, Gujarat, India"),
-    "ભરૂચ": ("ભરૂચ", "Bharuch district, Gujarat, India"),
-    "bharuch": ("ભરૂચ", "Bharuch district, Gujarat, India"),
-    "નર્મદા": ("નર્મદા", "Narmada district, Gujarat, India"),
-    "narmada": ("નર્મદા", "Narmada district, Gujarat, India"),
-    "વલસાડ": ("વલસાડ", "Valsad district, Gujarat, India"),
-    "valsad": ("વલસાડ", "Valsad district, Gujarat, India"),
-    "નવસારી": ("નવસારી", "Navsari district, Gujarat, India"),
-    "navsari": ("નવસારી", "Navsari district, Gujarat, India"),
-    "ડાંગ": ("ડાંગ", "Dang, Gujarat, India"),
-    "dang": ("ડાંગ", "Dang, Gujarat, India"),
-    "રાજકોટ": ("રાજકોટ", "Rajkot district, Gujarat, India"),
-    "rajkot": ("રાજકોટ", "Rajkot district, Gujarat, India"),
-    "જામનગર": ("જામનગર", "Jamnagar district, Gujarat, India"),
-    "jamnagar": ("જામનગર", "Jamnagar district, Gujarat, India"),
-    "જૂનાગઢ": ("જૂનાગઢ", "Junagadh district, Gujarat, India"),
-    "junagadh": ("જૂનાગઢ", "Junagadh district, Gujarat, India"),
-    "ભાવનગર": ("ભાવનગર", "Bhavnagar district, Gujarat, India"),
-    "bhavnagar": ("ભાવનગર", "Bhavnagar district, Gujarat, India"),
-    "અમરેલી": ("અમરેલી", "Amreli district, Gujarat, India"),
-    "amreli": ("અમરેલી", "Amreli district, Gujarat, India"),
-    "મોરબી": ("મોરબી", "Morbi district, Gujarat, India"),
-    "morbi": ("મોરબી", "Morbi district, Gujarat, India"),
-    "સુરેન્દ્રનગર": ("સુરેન્દ્રનગર", "Surendranagar district, Gujarat, India"),
-    "surendranagar": ("સુરેન્દ્રનગર", "Surendranagar district, Gujarat, India"),
-    "પોરબંદર": ("પોરબંદર", "Porbandar district, Gujarat, India"),
-    "porbandar": ("પોરબંદર", "Porbandar district, Gujarat, India"),
-    "ગીર સોમનાથ": ("ગીર સોમનાથ", "Gir Somnath, Gujarat, India"),
-    "gir somnath": ("ગીર સોમનાથ", "Gir Somnath, Gujarat, India"),
-    "દેવભૂમિ દ્વારકા": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka, Gujarat, India"),
-    "dwarka": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka, Gujarat, India"),
-    "બોટાદ": ("બોટાદ", "Botad district, Gujarat, India"),
-    "botad": ("બોટાદ", "Botad district, Gujarat, India"),
-    "મહીસાગર": ("મહીસાગર", "Mahisagar, Gujarat, India"),
-    "mahisagar": ("મહીસાગર", "Mahisagar, Gujarat, India"),
-    "પંચમહાલ": ("પંચમહાલ", "Panchmahal, Gujarat, India"),
-    "panchmahal": ("પંચમહાલ", "Panchmahal, Gujarat, India"),
-    "દાહોદ": ("દાહોદ", "Dahod district, Gujarat, India"),
-    "dahod": ("દાહોદ", "Dahod district, Gujarat, India"),
-    "છોટા ઉદેપુર": ("છોટા ઉદેપુર", "Chhota Udaipur, Gujarat, India"),
-    "chhota udaipur": ("છોટા ઉદેપુર", "Chhota Udaipur, Gujarat, India"),
-    "તાપી": ("તાપી", "Tapi, Gujarat, India"),
-    "tapi": ("તાપી", "Tapi, Gujarat, India"),
-}
-
-DISTRICT_BUILTIN_PINS = {
-    "મહેસાણા": [
-        {"name": "મહેસાણા", "lon": 72.3693, "lat": 23.5880, "type": "taluka"},
-        {"name": "વિસનગર", "lon": 72.5522, "lat": 23.6987, "type": "taluka"},
-        {"name": "ઊંઝા", "lon": 72.3912, "lat": 23.8037, "type": "taluka"},
-        {"name": "કડી", "lon": 72.3336, "lat": 23.2991, "type": "taluka"},
-        {"name": "ખેરાલુ", "lon": 72.6133, "lat": 23.8861, "type": "taluka"},
-        {"name": "વડનગર", "lon": 72.6331, "lat": 23.7852, "type": "taluka"},
-        {"name": "વિજાપુર", "lon": 72.7525, "lat": 23.5612, "type": "taluka"},
-        {"name": "બેચરાજી", "lon": 72.0461, "lat": 23.5015, "type": "taluka"},
-        {"name": "સતલાસણા", "lon": 72.7358, "lat": 24.0061, "type": "taluka"},
-        {"name": "જોટાણા", "lon": 72.3168, "lat": 23.4756, "type": "taluka"},
-        {"name": "પલાજ", "lon": 72.4265, "lat": 23.5535, "type": "village"},
-        {"name": "મોઢેરા", "lon": 72.1332, "lat": 23.5835, "type": "village"},
-        {"name": "તારંગા", "lon": 72.7562, "lat": 23.9631, "type": "village"},
-        {"name": "લાંઘણજ", "lon": 72.4950, "lat": 23.4520, "type": "village"},
-        {"name": "ગોઝારિયા", "lon": 72.6010, "lat": 23.4890, "type": "village"},
-        {"name": "આંબલિયાસણ", "lon": 72.4410, "lat": 23.4830, "type": "village"},
-        {"name": "ઉનાવા", "lon": 72.3735, "lat": 23.7580, "type": "village"},
-        {"name": "ભાંડુ", "lon": 72.3780, "lat": 23.6940, "type": "village"},
-        {"name": "નંદાસણ", "lon": 72.4110, "lat": 23.3820, "type": "village"},
-        {"name": "સુંઢિયા", "lon": 72.5780, "lat": 23.8210, "type": "village"},
-        {"name": "કુકસ", "lon": 72.4150, "lat": 23.6350, "type": "village"},
-        {"name": "લડાલ", "lon": 72.6850, "lat": 23.6320, "type": "village"},
-    ],
-    "પાટણ": [
-        {"name": "પાટણ", "lon": 72.1266, "lat": 23.8493, "type": "taluka"},
-        {"name": "સિદ્ધપુર", "lon": 72.3736, "lat": 23.9182, "type": "taluka"},
-        {"name": "ચાણસ્મા", "lon": 72.1211, "lat": 23.7192, "type": "taluka"},
-        {"name": "હારિજ", "lon": 71.8981, "lat": 23.6942, "type": "taluka"},
-        {"name": "સમી", "lon": 71.7891, "lat": 23.6881, "type": "taluka"},
-        {"name": "રાધનપુર", "lon": 71.6067, "lat": 23.8315, "type": "taluka"},
-        {"name": "સાંતલપુર", "lon": 71.1892, "lat": 23.7765, "type": "taluka"},
-        {"name": "સરસ્વતી", "lon": 72.0750, "lat": 23.8850, "type": "taluka"},
-        {"name": "શંખેશ્વર", "lon": 71.7850, "lat": 23.5150, "type": "taluka"},
-        {"name": "રાણીની વાવ", "lon": 72.1018, "lat": 23.8589, "type": "village"},
-        {"name": "વરણા", "lon": 72.1550, "lat": 23.9050, "type": "village"},
-        {"name": "ખાનપુર", "lon": 72.0550, "lat": 23.7950, "type": "village"},
-    ]
-}
-
-OFFLINE_DISTRICT_POLYGONS = {
-    "મહેસાણા": [
-        [71.95, 23.45], [72.02, 23.62], [72.22, 23.68], [72.32, 23.85],
-        [72.52, 23.95], [72.72, 24.08], [72.83, 23.96], [72.78, 23.78],
-        [72.82, 23.54], [72.66, 23.44], [72.48, 23.36], [72.38, 23.21],
-        [72.22, 23.25], [72.18, 23.40], [71.95, 23.45]
-    ],
-    "પાટણ": [
-        [71.08, 23.72], [71.25, 23.95], [71.65, 23.98], [72.02, 23.98],
-        [72.35, 24.02], [72.46, 23.88], [72.25, 23.75], [72.18, 23.64],
-        [71.92, 23.45], [71.68, 23.48], [71.52, 23.65], [71.15, 23.62], [71.08, 23.72]
-    ]
-}
-
-def _build_convex_hull_polygon(points, pad=0.08):
-    """જો કોઈ જિલ્લાનો નકશો ઓફલાઈન હોય, તો તેના તાલુકા/ગામોના બિંદુઓ પરથી પીળો જિલ્લા આકાર (Hull) બનાવે છે."""
-    pts = sorted(set((round(p[0], 4), round(p[1], 4)) for p in points))
-    if len(pts) < 3:
-        cx = sum(p[0] for p in pts) / len(pts)
-        cy = sum(p[1] for p in pts) / len(pts)
-        return [
-            [cx - 0.18, cy - 0.12], [cx + 0.18, cy - 0.12],
-            [cx + 0.22, cy + 0.04], [cx + 0.12, cy + 0.15],
-            [cx - 0.14, cy + 0.14], [cx - 0.20, cy + 0.02], [cx - 0.18, cy - 0.12]
-        ]
-
-    def cross(o, a, b):
-        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-
-    lower = []
-    for p in pts:
-        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
-            lower.pop()
-        lower.append(p)
-    upper = []
-    for p in reversed(pts):
-        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
-            upper.pop()
-        upper.append(p)
-    hull = lower[:-1] + upper[:-1]
-    cx = sum(p[0] for p in hull) / len(hull)
-    cy = sum(p[1] for p in hull) / len(hull)
-    padded = []
-    for hx, hy in hull:
-        ang = math.atan2(hy - cy, hx - cx)
-        padded.append([hx + math.cos(ang) * pad, hy + math.sin(ang) * pad])
-    padded.append(padded[0])
-    return padded
-
-def extract_mentioned_districts(query_text):
-    q = (query_text or "").lower()
-    found = []
-    for kw, (guj_d, _en_q) in GUJ_DIST_KEYWORDS.items():
-        if kw in q and guj_d not in found:
-            found.append(guj_d)
-    return found
-
-def get_osm_en_for_guj_dist(guj_dist):
-    for _kw, (gd, en_q) in GUJ_DIST_KEYWORDS.items():
-        if gd == guj_dist:
-            return en_q
-    return f"{guj_dist}, Gujarat, India"
-
-DISTRICT_EN_TO_GUJ = {
-    "kachchh": ("કચ્છ", "kutch"), "kutch": ("કચ્છ", "kutch"),
-    "banaskantha": ("બનાસકાંઠા", "north"), "banas kantha": ("બનાસકાંઠા", "north"),
-    "patan": ("પાટણ", "north"),
-    "mahesana": ("મહેસાણા", "north"), "mehsana": ("મહેસાણા", "north"),
-    "sabarkantha": ("સાબરકાંઠા", "north"), "sabar kantha": ("સાબરકાંઠા", "north"),
-    "aravalli": ("અરવલ્લી", "north"), "arvalli": ("અરવલ્લી", "north"),
-    "gandhinagar": ("ગાંધીનગર", "central"),
-    "ahmadabad": ("અમદાવાદ", "central"), "ahmedabad": ("અમદાવાદ", "central"),
-    "kheda": ("ખેડા", "central"),
-    "mahisagar": ("મહીસાગર", "central"),
-    "panchmahal": ("પંચમહાલ", "central"), "panch mahals": ("પંચમહાલ", "central"),
-    "dohad": ("દાહોદ", "central"), "dahod": ("દાહોદ", "central"),
-    "anand": ("આણંદ", "central"),
-    "vadodara": ("વડોદરા", "central"),
-    "chhotaudepur": ("છોટા ઉદેપુર", "central"), "chhota udaipur": ("છોટા ઉદેપુર", "central"),
-    "bharuch": ("ભરૂચ", "south"),
-    "narmada": ("નર્મદા", "south"),
-    "surat": ("સુરત", "south"),
-    "tapi": ("તાપી", "south"),
-    "navsari": ("નવસારી", "south"),
-    "the dangs": ("ડાંગ", "south"), "dang": ("ડાંગ", "south"), "dangs": ("ડાંગ", "south"),
-    "valsad": ("વલસાડ", "south"),
-    "surendranagar": ("સુરેન્દ્રનગર", "saurashtra"),
-    "morbi": ("મોરબી", "saurashtra"),
-    "jamnagar": ("જામનગર", "saurashtra"),
-    "devbhumi dwarka": ("દેવભૂમિ દ્વારકા", "saurashtra"), "dwarka": ("દેવભૂમિ દ્વારકા", "saurashtra"),
-    "porbandar": ("પોરબંદર", "saurashtra"),
-    "rajkot": ("રાજકોટ", "saurashtra"),
-    "botad": ("બોટાદ", "saurashtra"),
-    "junagadh": ("જૂનાગઢ", "saurashtra"),
-    "amreli": ("અમરેલી", "saurashtra"),
-    "bhavnagar": ("ભાવનગર", "saurashtra"),
-    "gir somnath": ("ગીર સોમનાથ", "saurashtra"),
-}
-
-STATE_EN_TO_GUJ = {
-    "jammu & kashmir": ("જમ્મુ-કાશ્મીર", "north"), "jammu and kashmir": ("જમ્મુ-કાશ્મીર", "north"),
-    "ladakh": ("લદ્દાખ", "north"), "himachal pradesh": ("હિમાચલ", "north"),
-    "punjab": ("પંજાબ", "north"), "uttarakhand": ("ઉત્તરાખંડ", "north"),
-    "haryana": ("હરિયાણા", "north"), "delhi": ("દિલ્હી", "north"), "nct of delhi": ("દિલ્હી", "north"),
-    "rajasthan": ("રાજસ્થાન", "west"), "uttar pradesh": ("ઉત્તર પ્રદેશ", "north"),
-    "bihar": ("બિહાર", "east"), "gujarat": ("ગુજરાત", "west"),
-    "madhya pradesh": ("મધ્ય પ્રદેશ", "central"), "jharkhand": ("ઝારખંડ", "east"),
-    "west bengal": ("પશ્ચિમ બંગાળ", "east"), "chhattisgarh": ("છત્તીસગઢ", "central"),
-    "odisha": ("ઓડિશા", "east"), "orissa": ("ઓડિશા", "east"),
-    "maharashtra": ("મહારાષ્ટ્ર", "west"), "telangana": ("તેલંગાણા", "south"),
-    "karnataka": ("કર્ણાટક", "south"), "goa": ("ગોવા", "west"),
-    "andhra pradesh": ("આંધ્ર પ્રદેશ", "south"), "kerala": ("કેરળ", "south"),
-    "tamil nadu": ("તમિલનાડુ", "south"), "assam": ("આસામ", "east"),
-    "arunachal pradesh": ("અરુણાચલ", "east"), "meghalaya": ("મેઘાલય", "east"),
-    "manipur": ("મણિપુર", "east"), "mizoram": ("મિઝોરમ", "east"),
-    "nagaland": ("નાગાલેન્ડ", "east"), "tripura": ("ત્રિપુરા", "east"), "sikkim": ("સિક્કિમ", "east"),
-}
-
-ZONE_COLORS = {
-    "kutch": "#DCE775", "north": "#F8BBD0", "central": "#FFCC80",
-    "saurashtra": "#CE93D8", "south": "#80DEEA", "west": "#DCE775", "east": "#80DEEA",
-}
-HIGHLIGHT_COLORS = ["#FEF08A", "#BAE6FD", "#FBCFE8", "#BBF7D0", "#FED7AA", "#DDD6FE", "#99F6E4", "#FECACA"]
-PASTEL_PALETTE = ["#FDE68A", "#BAE6FD", "#FBCFE8", "#BBF7D0", "#DDD6FE", "#FED7AA", "#99F6E4", "#FECACA", "#E9D5FF", "#BFDBFE"]
-
-GUJARAT_RIVERS_GEO = [
-    ("નર્મદા નદી", [(74.1, 21.85), (73.5, 21.88), (73.0, 21.72), (72.6, 21.68)]),
-    ("તાપી નદી", [(74.2, 21.25), (73.5, 21.28), (72.8, 21.12), (72.65, 21.05)]),
-    ("સાબરમતી નદી", [(72.9, 24.1), (72.65, 23.2), (72.55, 22.6), (72.35, 22.25)]),
-    ("મહી નદી", [(73.8, 23.3), (73.3, 22.8), (72.95, 22.35), (72.7, 22.2)]),
-    ("બનાસ નદી", [(72.6, 24.4), (72.0, 24.1), (71.5, 23.8)]),
-    ("સરસ્વતી નદી", [(72.8, 24.2), (72.2, 23.85), (71.7, 23.6)]),
-    ("દમણગંગા નદી", [(73.3, 20.35), (72.95, 20.4), (72.82, 20.41)]),
-]
-
-INDIA_RIVERS_GEO = [
-    ("ગંગા નદી", [(78.2, 30.1), (80.5, 26.5), (83.0, 25.3), (86.5, 25.2), (88.2, 23.0)]),
-    ("યમુના નદી", [(77.2, 28.6), (78.0, 27.1), (81.8, 25.4)]),
-    ("નર્મદા નદી", [(81.5, 22.7), (77.0, 22.1), (73.0, 21.7)]),
-    ("ગોદાવરી નદી", [(73.8, 19.9), (78.0, 18.8), (82.1, 16.8)]),
-    ("કૃષ્ણા નદી", [(74.0, 17.8), (77.5, 16.3), (80.9, 15.8)]),
-]
-
-def load_real_geojson(kind="gujarat"):
-    if kind in _GEO_MEM_CACHE:
-        return _GEO_MEM_CACHE[kind]
-    if kind == "gujarat":
-        local_path = "geo_cache/gujarat_real_districts.geojson"
-        urls = [
-            "[https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson](https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson)",
-            "[https://raw.githubusercontent.com/datameet/maps/master/Districts/Census_2011/2011_Dist.geojson](https://raw.githubusercontent.com/datameet/maps/master/Districts/Census_2011/2011_Dist.geojson)",
-        ]
-    elif kind == "world":
-        local_path = "geo_cache/world_countries.geojson"
-        urls = ["[https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json](https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json)"]
-    else:
-        local_path = "geo_cache/india_real_states.geojson"
-        urls = [
-            "[https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson](https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson)",
-            "[https://raw.githubusercontent.com/Subhash9325/GeoJson-Data-of-Indian-States/master/Indian_States](https://raw.githubusercontent.com/Subhash9325/GeoJson-Data-of-Indian-States/master/Indian_States)",
-        ]
-
-    if os.path.exists(local_path):
-        try:
-            with open(local_path, "r", encoding="utf-8") as f:
-                cached = json.load(f)
-                if cached.get("features"):
-                    _GEO_MEM_CACHE[kind] = cached
-                    return cached
-        except Exception:
-            pass
-
-    for u in urls:
-        try:
-            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=22) as resp:
-                raw = json.loads(resp.read().decode("utf-8"))
-                if kind == "gujarat":
-                    guj_feats = []
-                    for feat in raw.get("features", []):
-                        props = feat.get("properties") or {}
-                        st_val = str(props.get("NAME_1") or props.get("ST_NM") or props.get("state") or "").lower()
-                        if "gujarat" in st_val:
-                            guj_feats.append(feat)
-                    if len(guj_feats) >= 20:
-                        data = {"type": "FeatureCollection", "features": guj_feats}
-                        with open(local_path, "w", encoding="utf-8") as f:
-                            json.dump(data, f)
-                        _GEO_MEM_CACHE[kind] = data
-                        return data
-                else:
-                    if raw.get("features"):
-                        with open(local_path, "w", encoding="utf-8") as f:
-                            json.dump(raw, f)
-                        _GEO_MEM_CACHE[kind] = raw
-                        return raw
-        except Exception:
-            continue
-    return None
-
-def fetch_osm_real_boundary(place_query):
-    safe_key = re.sub(r"[^a-zA-Z0-9_]", "_", place_query.lower())[:50]
-    cache_file = f"geo_cache/osm_{safe_key}.json"
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    try:
-        q_enc = urllib.parse.quote(place_query)
-        url = f"[https://nominatim.openstreetmap.org/search?q=](https://nominatim.openstreetmap.org/search?q=){q_enc}&format=geojson&polygon_geojson=1&limit=1"
-        req = urllib.request.Request(url, headers={"User-Agent": "PalajSmartSchoolTeacherApp/4.0 (education)"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            if data.get("features"):
-                with open(cache_file, "w", encoding="utf-8") as f:
-                    json.dump(data, f)
-                return data
-    except Exception:
-        pass
-    return None
-
-def _extract_polygons_from_geom(geom):
-    gtype = geom.get("type")
-    coords = geom.get("coordinates", [])
-    polys = []
-    if gtype == "Polygon" and coords:
-        polys.append(coords[0])
-    elif gtype == "MultiPolygon":
-        for poly in coords:
-            if poly:
-                polys.append(poly[0])
-    return polys
-
-def _polygon_centroid(pts):
-    if not pts:
-        return (0, 0)
-    xs = [p[0] for p in pts]
-    ys = [p[1] for p in pts]
-    return (sum(xs) / len(xs), sum(ys) / len(ys))
-
-def render_textbook_map_png(spec, raw_query=""):
-    if not HAS_MPL:
-        return None
-    font_path = get_pdf_font()
-    if font_path:
-        try:
-            font_manager.fontManager.addfont(font_path)
-            prop_name = font_manager.FontProperties(fname=font_path).get_name()
-            plt.rcParams["font.sans-serif"] = [prop_name, "DejaVu Sans"]
-            plt.rcParams["font.family"] = "sans-serif"
-        except Exception:
-            pass
-
-    fp_title = font_manager.FontProperties(fname=font_path, size=14, weight="bold") if font_path else None
-    fp_sub = font_manager.FontProperties(fname=font_path, size=10.5, weight="bold") if font_path else None
-    fp_lbl = font_manager.FontProperties(fname=font_path, size=9.2, weight="bold") if font_path else None
-    fp_leg = font_manager.FontProperties(fname=font_path, size=8.8) if font_path else None
-    fp_small = font_manager.FontProperties(fname=font_path, size=7.6, weight="bold") if font_path else None
-
-    fig = plt.figure(figsize=(13.0, 8.4), dpi=170)
-    fig.patch.set_facecolor("#F5F5F4")
-
-    bg_ax = fig.add_axes([0, 0, 1, 1])
-    bg_ax.set_xlim(0, 100)
-    bg_ax.set_ylim(0, 100)
-    bg_ax.axis("off")
-    bg_ax.add_patch(patches.FancyBboxPatch((1.5, 2), 97, 96, boxstyle="round,pad=0.4", facecolor="#FAF8F5", edgecolor="#78716C", linewidth=1.8))
-    bg_ax.text(50, 94.8, spec.get("header_top", "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ"), ha="center", va="center", color="#1E293B", fontproperties=fp_title)
-    bg_ax.text(50, 91.2, spec.get("title", "ભૌગોલિક / રાજકીય નકશો"), ha="center", va="center", color="#B91C1C", fontproperties=fp_sub)
-
-    map_ax = fig.add_axes([0.035, 0.055, 0.72, 0.82])
-    map_ax.set_facecolor("#E0F2FE")
-    for spine in map_ax.spines.values():
-        spine.set_edgecolor("#475569")
-        spine.set_linewidth(1.4)
-    map_ax.set_xticks([])
-    map_ax.set_yticks([])
-
-    region = str(spec.get("region", "gujarat")).lower()
-    highlights = spec.get("highlights", [])
-    hl_map = {}
-    for idx_h, h in enumerate(highlights):
-        p_name = str(h.get("place", "")).strip()
-        if p_name:
-            h_copy = dict(h)
-            if not h_copy.get("color"):
-                h_copy["color"] = HIGHLIGHT_COLORS[idx_h % len(HIGHLIGHT_COLORS)]
-            hl_map[p_name] = h_copy
-
-    mentioned_dists = extract_mentioned_districts(raw_query)
-    only_selected = bool(spec.get("only_selected", False)) or (len(mentioned_dists) >= 1)
-    q_low = (raw_query or "").lower()
-    force_rivers = bool(spec.get("show_rivers", False)) or any(w in q_low for w in ("નદી", "nadi", "river", "નર્મદા", "તાપી", "સાબરમતી", "ગંગા", "ભૌગોલિક", "bhaugolik"))
-
-    pins_to_draw = []
-    for d_name in mentioned_dists:
-        if d_name in DISTRICT_BUILTIN_PINS:
-            pins_to_draw.extend(DISTRICT_BUILTIN_PINS[d_name])
-    for p_item in (spec.get("pins") or []):
-        try:
-            p_name = str(p_item.get("name", "")).strip()
-            p_lat = float(p_item.get("lat"))
-            p_lon = float(p_item.get("lon"))
-            p_type = str(p_item.get("type", "village")).lower()
-            if p_name and not any(existing["name"] == p_name for existing in pins_to_draw):
-                pins_to_draw.append({"name": p_name, "lat": p_lat, "lon": p_lon, "type": p_type})
-        except Exception:
-            continue
-
-    if region == "local":
-        search_en = str(spec.get("osm_query_en") or "Mehsana, Gujarat, India").strip()
-        osm_geo = fetch_osm_real_boundary(search_en)
-        all_x, all_y = [], []
-        if osm_geo and osm_geo.get("features"):
-            feat = osm_geo["features"][0]
-            polys = _extract_polygons_from_geom(feat.get("geometry") or {})
-            for poly in polys:
-                map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor="#FEF08A", edgecolor="#B91C1C", linewidth=2.2, alpha=0.95, joinstyle="round"))
-                for px, py in poly:
-                    all_x.append(px)
-                    all_y.append(py)
-        if all_x and all_y:
-            dx = max((max(all_x) - min(all_x)) * 0.14, 0.06)
-            dy = max((max(all_y) - min(all_y)) * 0.14, 0.06)
-            map_ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
-            map_ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
-            map_ax.set_aspect("equal", adjustable="datalim")
-        else:
-            region = "gujarat"
-
-    if region == "world":
-        geo = load_real_geojson("world")
-        if geo and geo.get("features"):
-            all_x, all_y = [], []
-            for idx_w, feat in enumerate(geo["features"]):
-                props = feat.get("properties") or {}
-                raw_name = str(props.get("name") or "").strip()
-                is_india = "india" in raw_name.lower()
-                matched_hl = next((v for k, v in hl_map.items() if k.lower() in raw_name.lower()), None)
-                if only_selected and not matched_hl:
-                    continue
-                fc = "#EF4444" if is_india else (matched_hl.get("color") if matched_hl else PASTEL_PALETTE[idx_w % len(PASTEL_PALETTE)])
-                polys = _extract_polygons_from_geom(feat.get("geometry") or {})
-                for poly in polys:
-                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=fc, edgecolor="#334155", linewidth=0.8, alpha=0.95))
-                    for px, py in poly:
-                        all_x.append(px)
-                        all_y.append(py)
-                if (is_india or matched_hl) and polys:
-                    cx, cy = _polygon_centroid(max(polys, key=len))
-                    lbl = matched_hl.get("label") if matched_hl else "ભારત"
-                    map_ax.text(cx, cy, lbl, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl)
-            if all_x and all_y:
-                map_ax.set_xlim(-175, 180)
-                map_ax.set_ylim(-58, 84)
-                map_ax.set_aspect("equal", adjustable="datalim")
-
-    elif region == "india":
-        geo = load_real_geojson("india")
-        if geo and geo.get("features"):
-            all_x, all_y = [], []
-            for idx_st, feat in enumerate(geo["features"]):
-                props = feat.get("properties") or {}
-                raw_name = str(props.get("NAME_1") or props.get("ST_NM") or props.get("state") or "").strip()
-                guj_name, zone = STATE_EN_TO_GUJ.get(raw_name.lower(), (raw_name, "central"))
-                matched_hl = next((v for k, v in hl_map.items() if k in guj_name or guj_name in k or k.lower() in raw_name.lower()), None)
-                fc = matched_hl.get("color") if matched_hl else ("#F1F5F9" if hl_map else ZONE_COLORS.get(zone, "#E2E8F0"))
-                ec = "#B91C1C" if matched_hl else "#334155"
-                lw = 2.2 if matched_hl else 0.85
-
-                polys = _extract_polygons_from_geom(feat.get("geometry") or {})
-                biggest = max(polys, key=len) if polys else []
-                for poly in polys:
-                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=fc, edgecolor=ec, linewidth=lw, alpha=0.96, joinstyle="round"))
-                    for px, py in poly:
-                        all_x.append(px)
-                        all_y.append(py)
-                if biggest:
-                    cx, cy = _polygon_centroid(biggest)
-                    map_ax.text(cx, cy, guj_name, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl if matched_hl else fp_small)
-                    if matched_hl and matched_hl.get("label") and matched_hl.get("label") != guj_name:
-                        map_ax.text(cx, cy - 0.9, f"▲ {matched_hl.get('label')[:16]}", ha="center", va="center", color="#991B1B", fontproperties=fp_lbl)
-            if force_rivers:
-                for r_name, pts in INDIA_RIVERS_GEO:
-                    xs, ys = zip(*pts)
-                    map_ax.plot(xs, ys, color="#0284C7", linewidth=2.4)
-                    map_ax.text(xs[1], ys[1] + 0.5, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_lbl)
-            if all_x and all_y:
-                dx = max((max(all_x) - min(all_x)) * 0.14, 1.0)
-                dy = max((max(all_y) - min(all_y)) * 0.14, 1.0)
-                map_ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
-                map_ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
-                map_ax.set_aspect("equal", adjustable="datalim")
-                map_ax.text(min(all_x) + 3.5, min(all_y) + 6.0, "અરબ સાગર", ha="center", va="center", color="#0369A1", fontproperties=fp_lbl)
-                map_ax.text(max(all_x) - 8.5, min(all_y) + 6.0, "બંગાળની ખાડી", ha="center", va="center", color="#0369A1", fontproperties=fp_lbl)
-
-    elif region == "gujarat":
-        geo = load_real_geojson("gujarat")
-        all_x, all_y = [], []
-        if geo and geo.get("features"):
-            for idx_d, feat in enumerate(geo["features"]):
-                props = feat.get("properties") or {}
-                raw_dist = str(props.get("NAME_2") or props.get("DISTRICT") or props.get("dtname") or props.get("district") or "").strip()
-                guj_name, zone = DISTRICT_EN_TO_GUJ.get(raw_dist.lower(), (raw_dist, "central"))
-                matched_hl = next((v for k, v in hl_map.items() if k in guj_name or guj_name in k or k.lower() in raw_dist.lower()), None)
-
-                if only_selected and not matched_hl:
-                    continue
-
-                fc = matched_hl.get("color") if matched_hl else ("#F1F5F9" if hl_map else ZONE_COLORS.get(zone, "#E2E8F0"))
-                ec = "#B91C1C" if matched_hl else "#334155"
-                lw = 2.4 if matched_hl else 0.9
-
-                polys = _extract_polygons_from_geom(feat.get("geometry") or {})
-                biggest = max(polys, key=len) if polys else []
-                for poly in polys:
-                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=fc, edgecolor=ec, linewidth=lw, alpha=0.96, joinstyle="round"))
-                    for px, py in poly:
-                        all_x.append(px)
-                        all_y.append(py)
-                if biggest and not pins_to_draw:
-                    cx, cy = _polygon_centroid(biggest)
-                    map_ax.text(cx, cy, guj_name, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl if (only_selected or matched_hl) else fp_small)
-
-        # ઓફલાઈન / OSM ફોલબેક 1: OSM પરથી અસલી જિલ્લા સરહદ લાવો
-        if not all_x:
-            target_dists = mentioned_dists or list(hl_map.keys())
-            for idx_td, d_name in enumerate(target_dists):
-                col = HIGHLIGHT_COLORS[idx_td % len(HIGHLIGHT_COLORS)]
-                osm_d = fetch_osm_real_boundary(get_osm_en_for_guj_dist(d_name))
-                if osm_d and osm_d.get("features"):
-                    polys = _extract_polygons_from_geom(osm_d["features"][0].get("geometry") or {})
-                    for poly in polys:
-                        map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=col, edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
-                        for px, py in poly:
-                            all_x.append(px)
-                            all_y.append(py)
-                # ઓફલાઈન ફોલબેક 2: બિલ્ટ-ઇન જિલ્લા સરહદ
-                if not all_x and d_name in OFFLINE_DISTRICT_POLYGONS:
-                    poly = OFFLINE_DISTRICT_POLYGONS[d_name]
-                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=col, edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
-                    for px, py in poly:
-                        all_x.append(px)
-                        all_y.append(py)
-
-        # ઓફલાઈન ફોલબેક 3: જો કોઈપણ નવા જિલ્લાના પિન્સ (તાલુકા/ગામ) મળ્યા હોય તો તેની ફરતે પીળો નકશો (Polygon) બનાવો!
-        if not all_x and pins_to_draw:
-            hull_poly = _build_convex_hull_polygon([(p["lon"], p["lat"]) for p in pins_to_draw], pad=0.09)
-            map_ax.add_patch(patches.Polygon(hull_poly, closed=True, facecolor="#FEF08A", edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
-            for px, py in hull_poly:
-                all_x.append(px)
-                all_y.append(py)
-
-        if force_rivers and all_x and all_y:
-            for r_name, pts in GUJARAT_RIVERS_GEO:
-                xs, ys = zip(*pts)
-                if only_selected:
-                    if not any((min(all_x) - 0.15 <= x <= max(all_x) + 0.15 and min(all_y) - 0.15 <= y <= max(all_y) + 0.15) for x, y in pts):
-                        continue
-                map_ax.plot(xs, ys, color="#0284C7", linewidth=2.2, alpha=0.8)
-                map_ax.text(xs[1], ys[1] + 0.03, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_small)
-
-        if pins_to_draw:
-            for p in pins_to_draw:
-                px, py = p["lon"], p["lat"]
-                all_x.append(px)
-                all_y.append(py)
-                is_taluka = p.get("type") == "taluka"
-                if is_taluka:
-                    map_ax.scatter([px], [py], s=75, marker="*", color="#DC2626", edgecolor="#0F172A", linewidth=0.7, zorder=6)
-                    map_ax.text(px, py + 0.014, p["name"], ha="center", va="bottom", color="#991B1B", fontproperties=fp_lbl,
-                                bbox=dict(boxstyle="round,pad=0.12", facecolor="#FFFFFF", edgecolor="none", alpha=0.75), zorder=7)
-                else:
-                    map_ax.scatter([px], [py], s=26, marker="o", color="#1D4ED8", edgecolor="#FFFFFF", linewidth=0.6, zorder=5)
-                    map_ax.text(px, py - 0.012, p["name"], ha="center", va="top", color="#1E3A8A", fontproperties=fp_small,
-                                bbox=dict(boxstyle="round,pad=0.08", facecolor="#FFFFFF", edgecolor="none", alpha=0.68), zorder=6)
-
-        if all_x and all_y:
-            dx = max((max(all_x) - min(all_x)) * 0.14, 0.15)
-            dy = max((max(all_y) - min(all_y)) * 0.14, 0.15)
-            map_ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
-            map_ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
-            map_ax.set_aspect("equal", adjustable="datalim")
-            if not only_selected:
-                map_ax.text(69.5, 22.65, "કચ્છનો અખાત", ha="center", va="center", color="#0369A1", fontproperties=fp_small)
-                map_ax.text(72.35, 21.45, "ખંભાતનો અખાત", ha="center", va="center", color="#0369A1", fontproperties=fp_small)
-                map_ax.text(70.2, 20.45, "અરબ સાગર", ha="center", va="center", color="#0369A1", fontproperties=fp_lbl)
-
-    map_ax.text(0.95, 0.94, "ઉત્તર", transform=map_ax.transAxes, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl)
-    map_ax.annotate("", xy=(0.95, 0.91), xytext=(0.95, 0.80), xycoords="axes fraction", textcoords="axes fraction", arrowprops=dict(arrowstyle="->", lw=2.2, color="#0F172A"))
-
-    bg_ax.add_patch(patches.FancyBboxPatch((77.2, 5.5), 20.0, 82.0, boxstyle="round,pad=0.35", facecolor="#FFFFFF", edgecolor="#94A3B8", linewidth=1.3))
-    bg_ax.text(87.2, 84.8, "📌 સંજ્ઞા સૂચિ", ha="center", va="center", color="#1E3A8A", fontproperties=fp_sub)
-    bg_ax.plot([78.8, 95.6], [82.4, 82.4], color="#CBD5E1", linewidth=1)
-
-    default_legends = {
-        "gujarat": [{"color": "#DCE775", "label": "કચ્છ પ્રદેશ"}, {"color": "#F8BBD0", "label": "ઉત્તર ગુજરાત"}, {"color": "#FFCC80", "label": "મધ્ય ગુજરાત"}, {"color": "#CE93D8", "label": "સૌરાષ્ટ્ર"}, {"color": "#80DEEA", "label": "દક્ષિણ ગુજરાત"}],
-        "india": [{"color": "#F8BBD0", "label": "ઉત્તર ભારત"}, {"color": "#FFCC80", "label": "મધ્ય ભારત"}, {"color": "#DCE775", "label": "પશ્ચિમ ભારત"}, {"color": "#80DEEA", "label": "પૂર્વ ભારત"}, {"color": "#CE93D8", "label": "દક્ષિણ ભારત"}],
-        "world": [{"color": "#EF4444", "label": "ભારત દેશ"}, {"color": "#FDE68A", "label": "વિશ્વના દેશો"}],
-        "local": [{"color": "#FEF08A", "label": "વિસ્તારની સરહદ"}],
-    }
-    if hl_map:
-        legend_items = [{"color": v["color"], "label": v.get("label") or k} for k, v in hl_map.items()]
-    else:
-        legend_items = spec.get("legend") or default_legends.get(region, default_legends["gujarat"])
-
-    if pins_to_draw:
-        legend_items = [
-            {"color": "#DC2626", "label": "★ તાલુકા મથક"},
-            {"color": "#1D4ED8", "label": "● મુખ્ય ગામ"},
-        ] + list(legend_items)
-    if force_rivers:
-        legend_items = [{"color": "#0284C7", "label": "મુખ્ય નદીઓ"}] + list(legend_items)
-
-    for idx_l, li in enumerate(legend_items[:9]):
-        ly = 78.0 - idx_l * 7.8
-        bg_ax.add_patch(patches.Rectangle((78.8, ly - 1.6), 3.4, 3.2, facecolor=li.get("color", "#FACC15"), edgecolor="#334155", linewidth=1))
-        bg_ax.text(83.3, ly, str(li.get("label", ""))[:16], ha="left", va="center", color="#0F172A", fontproperties=fp_leg)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=170)
-    plt.close(fig)
-    return buf.getvalue()
-
-# ==============================================================================
-# 3. NCERT/GCERT TEXTBOOK SVG DIAGRAM + NANO BANANA IMAGE GENERATION ENGINE
-# ==============================================================================
-def get_curated_textbook_svg(query_text):
-    q = (query_text or "").lower()
-    if any(w in q for w in ("કંઠસ્થાન", "કંઠસ્થન", "સ્વરપેટી", "larynx", "laryx", "larnyx", "vocal")):
-        return '''<svg width="740" height="450" viewBox="0 0 740 450" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)">
-  <defs>
-    <linearGradient id="skinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#DBEAFE"/><stop offset="60%" stop-color="#93C5FD"/><stop offset="100%" stop-color="#60A5FA"/>
-    </linearGradient>
-    <linearGradient id="cartilageGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#BFDBFE"/><stop offset="50%" stop-color="#93C5FD"/><stop offset="100%" stop-color="#3B82F6"/>
-    </linearGradient>
-    <linearGradient id="handGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#E2E8F0"/><stop offset="100%" stop-color="#CBD5E1"/>
-    </linearGradient>
-  </defs>
-  <rect width="740" height="450" rx="12" fill="#FFFFFF"/>
-  <rect x="24" y="20" width="692" height="365" rx="6" fill="#F8FAFC" stroke="#475569" stroke-width="1.8"/>
-  <g transform="translate(45, 32)">
-    <path d="M 110,15 C 175,10 220,38 225,75 C 228,88 220,96 226,108 C 234,122 238,130 226,136 C 220,140 224,148 222,154 C 220,160 225,166 220,174 C 214,184 192,192 155,192 C 128,192 118,205 118,232 L 124,335 L 35,335 C 22,275 18,195 30,120 C 40,62 68,20 110,15 Z" fill="url(#skinGrad)" stroke="#1E3A8A" stroke-width="2.2"/>
-    <path d="M 65,330 L 92,225 C 96,208 112,204 114,220 L 92,330" fill="#60A5FA" stroke="#1E3A8A" stroke-width="1.8"/>
-    <ellipse cx="116" cy="216" rx="7" ry="12" fill="#3B82F6" stroke="#0F172A" stroke-width="1.8"/>
-    <path d="M 118,214 C 132,206 148,212 156,222 C 178,228 205,245 202,272 C 198,295 182,315 178,335 L 112,335 C 110,305 112,275 104,252 C 98,236 104,220 118,214 Z" fill="url(#handGrad)" stroke="#1E293B" stroke-width="2"/>
-    <circle cx="117" cy="215" r="3.5" fill="#DC2626"/>
-    <line x1="120" y1="215" x2="215" y2="215" stroke="#0F172A" stroke-width="1.8"/>
-    <text x="222" y="220" font-size="17" font-weight="bold" fill="#0F172A">સ્વરપેટી</text>
-  </g>
-  <g transform="translate(395, 55)">
-    <path d="M 35,45 C 28,25 42,15 50,35 C 56,55 62,82 88,88 C 115,94 165,94 192,88 C 218,82 224,55 230,35 C 238,15 252,25 245,45 C 238,75 248,125 242,165 C 236,205 198,238 162,245 C 148,248 142,240 140,235 C 138,240 132,248 118,245 C 82,238 44,205 38,165 C 32,125 42,75 35,45 Z" fill="url(#cartilageGrad)" stroke="#1E3A8A" stroke-width="2.4"/>
-    <path d="M 85,112 C 95,98 185,98 195,112 C 202,145 182,195 140,212 C 98,195 78,145 85,112 Z" fill="#EFF6FF" stroke="#1E3A8A" stroke-width="2"/>
-    <path d="M 136,112 C 112,135 112,175 138,205 L 138,112 Z" fill="#60A5FA" stroke="#0F172A" stroke-width="2"/>
-    <path d="M 144,112 C 168,135 168,175 142,205 L 142,112 Z" fill="#60A5FA" stroke="#0F172A" stroke-width="2"/>
-    <line x1="65" y1="275" x2="124" y2="162" stroke="#0F172A" stroke-width="1.8"/>
-    <line x1="65" y1="275" x2="154" y2="168" stroke="#0F172A" stroke-width="1.8"/>
-    <text x="65" y="298" text-anchor="middle" font-size="17" font-weight="bold" fill="#0F172A">સ્વરતંતુઓ</text>
-  </g>
-  <text x="370" y="422" text-anchor="middle" font-size="18" font-weight="bold" fill="#0F172A">[આકૃતિ 10.1 : મનુષ્યમાં સ્વરપેટી (કંઠસ્થાન)]</text>
-</svg>'''
-    return None
-
-def is_scientific_diagram_request(query_text):
-    q = (query_text or "").lower()
-    return any(w in q for w in (
-        "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "diagram",
-        "કંઠસ્થાન", "કંઠસ્થન", "સ્વરપેટી", "larynx", "કોષ", "પ્રકાશસંશ્લેષણ",
-        "વિદ્યુત", "પરિપથ", "ચુંબક", "હૃદય", "ફેફસાં", "પાચનતંત્ર", "શ્વસનતંત્ર", "પરાગનયન", "પુષ્પ"
-    ))
-
-async def generate_nano_banana_image_async(query_text, api_keys):
-    if not HAS_GENAI or not api_keys:
-        return None
-    prompt = (
-        f"Create a clean, colorful, child-friendly Indian elementary school (Grades 3-8) textbook illustration for: {query_text}. "
-        "Make it bright, clear, educational, accurate, with a clean white or soft pastel background and zero garbled text."
-    )
-    for key in api_keys:
-        client = get_cached_client(key)
-        for img_mod in NANO_BANANA_MODELS:
-            try:
-                res = await client.aio.models.generate_content(
-                    model=img_mod,
-                    contents=[prompt],
-                    config=types.GenerateContentConfig(response_modalities=["IMAGE"])
-                )
-                for cand in (res.candidates or []):
-                    for part in (cand.content.parts or []):
-                        if getattr(part, "inline_data", None) and part.inline_data.data:
-                            return ("png", part.inline_data.data)
-            except Exception:
-                continue
-    return None
-
-async def generate_clean_drawing_async(query_text, api_keys):
-    if is_scientific_diagram_request(query_text):
-        curated = get_curated_textbook_svg(query_text)
-        if curated:
-            return ("svg", curated)
-
-        if HAS_GENAI and api_keys:
-            svg_prompt = (
-                f"Create a detailed, realistic Indian NCERT / GCERT Class 3-8 Science textbook SVG diagram (width='740' height='450' viewBox='0 0 740 450') for: {query_text}.\n"
-                "STRICT RULES:\n"
-                "1. Output ONLY raw <svg width='740' height='450' viewBox='0 0 740 450' xmlns='[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)'>...</svg>.\n"
-                "2. White background <rect width='740' height='450' rx='12' fill='#FFFFFF'/> and inner border <rect x='24' y='20' width='692' height='365' rx='6' fill='#F8FAFC' stroke='#475569' stroke-width='1.8'/>.\n"
-                "3. Draw realistic anatomical/scientific curves using smooth cubic Bezier <path d='... C ...'> with <linearGradient> shading.\n"
-                "4. Add pointer lines with arrowheads and clear Gujarati part labels (font-size='16' font-weight='bold' fill='#0F172A') strictly inside x=45..690, y=45..370.\n"
-                "5. Put the textbook caption at the bottom: <text x='370' y='422' text-anchor='middle' font-size='18' font-weight='bold' fill='#0F172A'>[આકૃતિ : ...]</text>."
-            )
-            for key in api_keys:
-                client = get_cached_client(key)
-                models_list = await asyncio.to_thread(get_working_models_for_key, key, "gemini-2.5-flash")
-                for mod in models_list:
-                    try:
-                        res = await client.aio.models.generate_content(model=mod, contents=[svg_prompt])
-                        raw = (res.text or "").strip()
-                        m = re.search(r"(<svg[\s\S]*?</svg>)", raw, flags=re.IGNORECASE)
-                        if m:
-                            return ("svg", m.group(1))
-                    except Exception:
-                        pass
-
-    nb_img = await generate_nano_banana_image_async(query_text, api_keys)
-    if nb_img:
-        return nb_img
-
-    return None
-
-def build_math_fraction_svg(query_text):
-    q = (query_text or "").translate(str.maketrans("૦૧૨૩૪૫૬૭૮૯", "0123456789")).lower()
-    if "ત્રિકોણ" in q or "triangle" in q or "trikon" in q:
-        return '<svg width="520" height="290" viewBox="0 0 520 290" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"><rect width="520" height="290" rx="12" fill="#FFFFFF"/><text x="260" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#1E3A8A">📐 ત્રિકોણની આકૃતિ અને તેના અંગો</text><polygon points="260,60 130,235 390,235" fill="#DBEAFE" stroke="#1D4ED8" stroke-width="3"/><text x="260" y="48" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ A</text><text x="105" y="258" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ B</text><text x="415" y="258" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ C</text><text x="260" y="258" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F172A">પાયો BC (૩ બાજુ, ૩ ખૂણા)</text></svg>'
-    if "ચોરસ" in q or "લંબચોરસ" in q or "square" in q or "rectangle" in q or "choras" in q:
-        is_rect = "લંબચોરસ" in q or "rectangle" in q
-        w = 240 if is_rect else 160
-        x0 = 260 - w // 2
-        return f'<svg width="520" height="290" viewBox="0 0 520 290" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"><rect width="520" height="290" rx="12" fill="#FFFFFF"/><text x="260" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#1E3A8A">📐 {"લંબચોરસ" if is_rect else "ચોરસ"} ની આકૃતિ</text><rect x="{x0}" y="68" width="{w}" height="155" fill="#DCFCE7" stroke="#15803D" stroke-width="3"/><text x="260" y="255" text-anchor="middle" font-size="13" font-weight="bold" fill="#15803D">દરેક ખૂણો ૯૦° (કાટખૂણો)</text></svg>'
-    return None
-
-# --- DETECTION HELPERS ---
 _GUJ_DIGIT_MAP = str.maketrans("૦૧૨૩૪૫૬૭૮૯", "0123456789")
 _SUBJECT_LABELS = {"gujarati": "ગુજરાતી", "sanskrit": "સંસ્કૃત", "math": "ગણિત", "science": "વિજ્ઞાન", "social_science": "સામાજિક વિજ્ઞાન", "environment": "પર્યાવરણ", "english": "અંગ્રેજી", "hindi": "હિન્દી"}
 _EXPLICIT_SUBJECTS = {
@@ -1258,31 +106,6 @@ _EXPLICIT_SUBJECTS = {
     "english": ["અંગ્રેજી", "english"],
     "hindi": ["હિન્દી", "hindi"],
 }
-
-def wants_graph(text):
-    t = (text or "").lower()
-    return any(kw in t for kw in (
-        "આલેખ", "alekh", "aalekh", "graph", "chart", "plot",
-        "રેખીય", "સ્તંભ", "પાય ચાર્ટ", "pie chart", "bar graph", "line graph",
-        "યામ", "બિંદુઓ દર્શાવો", "x-અક્ષ", "y-અક્ષ", "પ્રમાણમાપ"
-    ))
-
-def wants_map(text):
-    t = (text or "").lower()
-    return any(kw in t for kw in (
-        "નકશો", "નક્શો", "નકશા", "નક્શા", "નકશાપૂર્તિ", "naksho", "naksha", "map",
-        "સંજ્ઞા વડે", "નકશામાં દર્શાવો", "કિલ્લા", "મગધ", "પ્રદેશો",
-        "રાજકીય", "ભૌગોલિક", "ગામનો", "gamno", "gamda", "ખેત ઉત્પાદન", "ઉદ્યોગો", "નદીઓ", "મતદાર", "વસ્તી ગણતરી", "blo"
-    )) or len(extract_mentioned_districts(text)) > 0
-
-def wants_any_drawing_or_diagram(text):
-    t = (text or "").lower()
-    return any(kw in t for kw in (
-        "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "ચિત્ર", "chitra", "chira", "chitran",
-        "દોરો", "દોરી", "doro", "dori", "બનાવો", "banavo", "banavi",
-        "diagram", "draw", "drawing", "sketch", "image", "picture", "photo", "painting", "nano banana",
-        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "કંઠસ્થન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં", "મંદિર", "સૂર્ય", "વૃક્ષ"
-    ))
 
 def needs_textbook_vision(text):
     t = (text or "").lower()
@@ -1329,54 +152,6 @@ def build_vision_pdf_parts(pdf_path):
     except Exception:
         return []
 
-def detect_default_map_spec(query_text):
-    q = (query_text or "").lower()
-    dist_list = extract_mentioned_districts(query_text)
-    if dist_list:
-        hls = [{"place": d, "label": d, "color": HIGHLIGHT_COLORS[i % len(HIGHLIGHT_COLORS)]} for i, d in enumerate(dist_list)]
-        return {
-            "region": "gujarat",
-            "only_selected": True,
-            "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ",
-            "title": f"{', '.join(dist_list)} જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો",
-            "show_rivers": True,
-            "highlights": hls,
-        }
-    highlights = []
-    for guj_st in ["ગુજરાત", "રાજસ્થાન", "દિલ્હી", "મહારાષ્ટ્ર", "મધ્ય પ્રદેશ", "ઉત્તર પ્રદેશ", "પંજાબ", "બિહાર", "કર્ણાટક", "તમિલનાડુ", "કેરળ"]:
-        if guj_st in query_text:
-            highlights.append({"place": guj_st, "label": guj_st, "color": HIGHLIGHT_COLORS[len(highlights) % len(HIGHLIGHT_COLORS)]})
-    if any(w in q for w in ("વિશ્વ", "world", "દુનિયા", "ખંડો", "મહાસાગર")):
-        return {"region": "world", "header_top": "સામાજિક વિજ્ઞાન - વિશ્વ નકશા પૂર્તિ", "title": "વિશ્વનો ભૌગોલિક અને રાજકીય નકશો", "highlights": highlights}
-    if any(w in q for w in ("ભારત", "india", "મગધ", "દિલ્હી", "રાજસ્થાન", "મહારાષ્ટ્ર", "પંજાબ", "બિહાર", "ગંગા", "હિમાલય")) or highlights:
-        show_riv = any(w in q for w in ("નદી", "nadi", "river", "ગંગા", "યમુના", "ગોદાવરી"))
-        return {"region": "india", "header_top": "સામાજિક વિજ્ઞાન - ભારત નકશા પૂર્તિ", "title": "ભારતનો રાજકીય અને ભૌગોલિક નકશો", "show_rivers": show_riv, "highlights": highlights}
-    show_riv = any(w in q for w in ("નદી", "nadi", "river", "નર્મદા", "તાપી", "સાબરમતી"))
-    return {"region": "gujarat", "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "ગુજરાતનો રાજકીય નકશો", "show_rivers": show_riv}
-
-def extract_or_build_map_bytes(content, is_map_query=False, raw_query=""):
-    map_img_bytes = None
-    clean_text = content
-    mentioned_dists = extract_mentioned_districts(raw_query)
-    if "```map_json" in clean_text:
-        m = re.search(r"```map_json\s*([\s\S]*?)```", clean_text)
-        if m:
-            try:
-                spec = json.loads(m.group(1).strip())
-                if spec.get("region") in ("village", "blo_village"):
-                    spec["region"] = "local"
-                if mentioned_dists:
-                    spec["region"] = "gujarat"
-                    spec["only_selected"] = True
-                    spec["highlights"] = [{"place": d, "label": d, "color": HIGHLIGHT_COLORS[i % len(HIGHLIGHT_COLORS)]} for i, d in enumerate(mentioned_dists)]
-                map_img_bytes = render_textbook_map_png(spec, raw_query=raw_query)
-            except Exception:
-                map_img_bytes = render_textbook_map_png(detect_default_map_spec(raw_query), raw_query=raw_query)
-        clean_text = re.sub(r"```map_json[\s\S]*?```", "", clean_text)
-    if is_map_query and not map_img_bytes:
-        map_img_bytes = render_textbook_map_png(detect_default_map_spec(raw_query), raw_query=raw_query)
-    return map_img_bytes, clean_text
-
 def get_quick_actions():
     return [
         cl.Action(name="quick_summary", payload={"type": "summary"}, label="📖 સારાંશ"),
@@ -1397,9 +172,6 @@ async def prewarm_geo_cache():
     await asyncio.to_thread(load_real_geojson, "gujarat")
     await asyncio.to_thread(load_real_geojson, "india")
 
-# ==============================================================================
-# CHAINLIT HOOKS
-# ==============================================================================
 @cl.on_chat_start
 async def on_chat_start():
     ensure_thread_files_dir()
@@ -1408,14 +180,7 @@ async def on_chat_start():
     cl.user_session.set("model_choice", ACTIVE_MODELS[0])
 
     settings = await cl.ChatSettings(
-        [
-            Select(
-                id="model_choice",
-                label="🤖 AI મોડેલ પસંદ કરો:",
-                values=ACTIVE_MODELS,
-                initial_index=0,
-            )
-        ]
+        [Select(id="model_choice", label="🤖 AI મોડેલ પસંદ કરો:", values=ACTIVE_MODELS, initial_index=0)]
     ).send()
     if settings and settings.get("model_choice"):
         cl.user_session.set("model_choice", settings["model_choice"])
@@ -1494,18 +259,14 @@ async def process_teacher_query(clean_q: str, elements: list):
     messages.append({"role": "user", "content": clean_q})
     cl.user_session.set("messages", messages)
 
-    if not HAS_GENAI or not api_keys:
+    if not api_keys:
         await cl.Message(content="⚠️ Environment Variables માં `GEMINI_API_KEY` દાખલ કરો.").send()
         return
 
     user_att_parts = []
     for el in elements:
         try:
-            if getattr(el, "path", None) and os.path.exists(el.path):
-                with open(el.path, "rb") as f:
-                    fb = f.read()
-            else:
-                fb = getattr(el, "content", None)
+            fb = open(el.path, "rb").read() if (getattr(el, "path", None) and os.path.exists(el.path)) else getattr(el, "content", None)
             if fb:
                 mime = getattr(el, "mime", "") or ""
                 if "pdf" in mime or str(getattr(el, "name", "")).lower().endswith(".pdf"):
@@ -1527,24 +288,22 @@ async def process_teacher_query(clean_q: str, elements: list):
     recent_hist = "\n".join(f"{'વિદ્યાર્થી' if m['role']=='user' else 'શિક્ષક'}: {m['content']}" for m in messages[:-1][-3:])
     book_page_parts = await asyncio.to_thread(build_vision_pdf_parts, local_pdf_paths[0]) if (local_pdf_paths and needs_textbook_vision(clean_q)) else []
 
-    img_task = None
-    if is_drawing_q:
-        img_task = asyncio.create_task(generate_clean_drawing_async(clean_q, api_keys))
+    img_task = asyncio.create_task(generate_clean_drawing_async(clean_q, api_keys, get_cached_client, get_working_models_for_key)) if is_drawing_q else None
 
     visual_instruction = ""
     if is_graph_q:
         visual_instruction += (
-            "\n**આલેખ (GRAPH) માટેની મહત્વની સૂચના:** જો પ્રશ્નમાં કે મોકલેલા ફોટોમાં કોઈ **આલેખ (રેખીય આલેખ, સ્તંભ આલેખ, પાય ચાર્ટ, કે બિંદુઓ દર્શાવવાનો દાખલો)** હોય, તો જવાબની શરૂઆતમાં નીચે મુજબનો ```graph_json બ્લોક ફરજિયાત આપો (બધી સંખ્યા અંગ્રેજી અંકોમાં `1, 2, 5, 10` રાખો અને લેબલ ગુજરાતીમાં રાખો):\n"
+            "\n**આલેખ (GRAPH) માટેની મહત્વની સૂચના:** જો પ્રશ્નમાં કે મોકલેલા ફોટોમાં કોઈ **આલેખ** હોય, તો જવાબની શરૂઆતમાં નીચે મુજબનો ```graph_json બ્લોક ફરજિયાત આપો (બધી સંખ્યા અંગ્રેજી અંકોમાં રાખો):\n"
             "```graph_json\n"
-            '{"type": "line", "title": "સફરજનની સંખ્યા અને કિંમતનો રેખીય આલેખ", "x_label": "સફરજનની સંખ્યા", "y_label": "કિંમત (રૂપિયામાં)", "scale": "X-અક્ષ: 1 એકમ = 1 સફરજન | Y-અક્ષ: 1 એકમ = 5 રૂપિયા", "x": [1, 2, 3, 4, 5], "y": [5, 10, 15, 20, 25]}\n'
+            '{"type": "line", "title": "આલેખ", "x_label": "X-અક્ષ", "y_label": "Y-અક્ષ", "scale": "X-અક્ષ: 1 એકમ | Y-અક્ષ: 5 એકમ", "x": [1, 2, 3, 4], "y": [5, 10, 15, 20]}\n'
             "```\n"
-            "(`type` માટે `\"line\"`, `\"bar\"`, `\"pie\"`, અથવા `\"points\"` વાપરો). અને તેની નીચે દાખલાના બધા પેટાપ્રશ્નોના સ્ટેપ-બાય-સ્ટેપ જવાબ શુદ્ધ ગુજરાતીમાં આપો."
+            "(`type` માટે `\"line\"`, `\"bar\"`, `\"pie\"`, અથવા `\"points\"` વાપરો)."
         )
     if is_map_q:
         visual_instruction += (
             "\n**નકશા (MAP) માટેની સૂચના:** પ્રશ્ન મુજબ સાચો ```map_json બ્લોક ફરજિયાત આપો:\n"
             "```map_json\n"
-            '{"region": "gujarat", "only_selected": true, "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો", "show_rivers": true, "highlights": [{"place": "પાટણ", "label": "પાટણ", "color": "#FEF08A"}], "pins": [{"name": "પાટણ", "lat": 23.849, "lon": 72.126, "type": "taluka"}, {"name": "સિદ્ધપુર", "lat": 23.918, "lon": 72.373, "type": "taluka"}]}\n'
+            '{"region": "gujarat", "only_selected": true, "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો", "show_rivers": true, "highlights": [{"place": "પાટણ", "label": "પાટણ", "color": "#FEF08A"}], "pins": [{"name": "પાટણ", "lat": 23.849, "lon": 72.126, "type": "taluka"}]}\n'
             "```"
         )
     elif is_drawing_q:
@@ -1595,9 +354,7 @@ async def process_teacher_query(clean_q: str, elements: list):
 
     computed_map_bytes = None
     if is_map_q:
-        computed_map_bytes, clean_text = await asyncio.to_thread(
-            extract_or_build_map_bytes, clean_text, True, clean_q
-        )
+        computed_map_bytes, clean_text = await asyncio.to_thread(extract_or_build_map_bytes, clean_text, True, clean_q)
     else:
         clean_text = re.sub(r"```map_json[\s\S]*?```", "", clean_text)
 
@@ -1607,11 +364,11 @@ async def process_teacher_query(clean_q: str, elements: list):
     elif computed_graph_bytes:
         msg_elements.append(cl.Image(name="palaj_graph.png", content=computed_graph_bytes, display="inline"))
     elif generated_svg_code:
-        msg_elements.append(make_svg_or_png_element(generated_svg_code, "palaj_diagram"))
+        msg_elements.append(make_svg_element(generated_svg_code, "palaj_diagram"))
     elif generated_img_bytes:
         msg_elements.append(cl.Image(name="palaj_illustration.png", content=generated_img_bytes, display="inline"))
     elif math_svg_code:
-        msg_elements.append(make_svg_or_png_element(math_svg_code, "math_diagram"))
+        msg_elements.append(make_svg_element(math_svg_code, "math_diagram"))
 
     badge = ""
     if computed_map_bytes:
