@@ -20,73 +20,73 @@ except ImportError:
 _GEO_MEM_CACHE = {}
 
 GUJ_DIST_KEYWORDS = {
-    "મહેસાણા": ("મહેસાણા", "Mehsana district, Gujarat, India"),
-    "mahesana": ("મહેસાણા", "Mehsana district, Gujarat, India"),
-    "mehsana": ("મહેસાણા", "Mehsana district, Gujarat, India"),
-    "બનાસકાંઠા": ("બનાસકાંઠા", "Banaskantha district, Gujarat, India"),
-    "banaskantha": ("બનાસકાંઠા", "Banaskantha district, Gujarat, India"),
-    "પાટણ": ("પાટણ", "Patan district, Gujarat, India"),
-    "patan": ("પાટણ", "Patan district, Gujarat, India"),
-    "કચ્છ": ("કચ્છ", "Kutch district, Gujarat, India"),
-    "kutch": ("કચ્છ", "Kutch district, Gujarat, India"),
-    "સાબરકાંઠા": ("સાબરકાંઠા", "Sabarkantha district, Gujarat, India"),
-    "sabarkantha": ("સાબરકાંઠા", "Sabarkantha district, Gujarat, India"),
-    "અરવલ્લી": ("અરવલ્લી", "Aravalli district, Gujarat, India"),
-    "aravalli": ("અરવલ્લી", "Aravalli district, Gujarat, India"),
-    "ગાંધીનગર": ("ગાંધીનગર", "Gandhinagar district, Gujarat, India"),
-    "gandhinagar": ("ગાંધીનગર", "Gandhinagar district, Gujarat, India"),
-    "અમદાવાદ": ("અમદાવાદ", "Ahmedabad district, Gujarat, India"),
-    "ahmedabad": ("અમદાવાદ", "Ahmedabad district, Gujarat, India"),
-    "ખેડા": ("ખેડા", "Kheda district, Gujarat, India"),
-    "kheda": ("ખેડા", "Kheda district, Gujarat, India"),
-    "આણંદ": ("આણંદ", "Anand district, Gujarat, India"),
-    "anand": ("આણંદ", "Anand district, Gujarat, India"),
-    "વડોદરા": ("વડોદરા", "Vadodara district, Gujarat, India"),
-    "vadodara": ("વડોદરા", "Vadodara district, Gujarat, India"),
-    "સુરત": ("સુરત", "Surat district, Gujarat, India"),
-    "surat": ("સુરત", "Surat district, Gujarat, India"),
-    "ભરૂચ": ("ભરૂચ", "Bharuch district, Gujarat, India"),
-    "bharuch": ("ભરૂચ", "Bharuch district, Gujarat, India"),
-    "નર્મદા": ("નર્મદા", "Narmada district, Gujarat, India"),
-    "narmada": ("નર્મદા", "Narmada district, Gujarat, India"),
-    "વલસાડ": ("વલસાડ", "Valsad district, Gujarat, India"),
-    "valsad": ("વલસાડ", "Valsad district, Gujarat, India"),
-    "નવસારી": ("નવસારી", "Navsari district, Gujarat, India"),
-    "navsari": ("નવસારી", "Navsari district, Gujarat, India"),
-    "ડાંગ": ("ડાંગ", "Dang district, Gujarat, India"),
-    "dang": ("ડાંગ", "Dang district, Gujarat, India"),
-    "રાજકોટ": ("રાજકોટ", "Rajkot district, Gujarat, India"),
-    "rajkot": ("રાજકોટ", "Rajkot district, Gujarat, India"),
-    "જામનગર": ("જામનગર", "Jamnagar district, Gujarat, India"),
-    "jamnagar": ("જામનગર", "Jamnagar district, Gujarat, India"),
-    "જૂનાગઢ": ("જૂનાગઢ", "Junagadh district, Gujarat, India"),
-    "junagadh": ("જૂનાગઢ", "Junagadh district, Gujarat, India"),
-    "ભાવનગર": ("ભાવનગર", "Bhavnagar district, Gujarat, India"),
-    "bhavnagar": ("ભાવનગર", "Bhavnagar district, Gujarat, India"),
-    "અમરેલી": ("અમરેલી", "Amreli district, Gujarat, India"),
-    "amreli": ("અમરેલી", "Amreli district, Gujarat, India"),
-    "મોરબી": ("મોરબી", "Morbi district, Gujarat, India"),
-    "morbi": ("મોરબી", "Morbi district, Gujarat, India"),
-    "સુરેન્દ્રનગર": ("સુરેન્દ્રનગર", "Surendranagar district, Gujarat, India"),
-    "surendranagar": ("સુરેન્દ્રનગર", "Surendranagar district, Gujarat, India"),
-    "પોરબંદર": ("પોરબંદર", "Porbandar district, Gujarat, India"),
-    "porbandar": ("પોરબંદર", "Porbandar district, Gujarat, India"),
-    "ગીર સોમનાથ": ("ગીર સોમનાથ", "Gir Somnath district, Gujarat, India"),
-    "gir somnath": ("ગીર સોમનાથ", "Gir Somnath district, Gujarat, India"),
-    "દેવભૂમિ દ્વારકા": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka district, Gujarat, India"),
-    "dwarka": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka district, Gujarat, India"),
-    "બોટાદ": ("બોટાદ", "Botad district, Gujarat, India"),
-    "botad": ("બોટાદ", "Botad district, Gujarat, India"),
-    "મહીસાગર": ("મહીસાગર", "Mahisagar district, Gujarat, India"),
-    "mahisagar": ("મહીસાગર", "Mahisagar district, Gujarat, India"),
-    "પંચમહાલ": ("પંચમહાલ", "Panchmahal district, Gujarat, India"),
-    "panchmahal": ("પંચમહાલ", "Panchmahal district, Gujarat, India"),
-    "દાહોદ": ("દાહોદ", "Dahod district, Gujarat, India"),
-    "dahod": ("દાહોદ", "Dahod district, Gujarat, India"),
-    "છોટા ઉદેપુર": ("છોટા ઉદેપુર", "Chhota Udaipur district, Gujarat, India"),
-    "chhota udaipur": ("છોટા ઉદેપુર", "Chhota Udaipur district, Gujarat, India"),
-    "તાપી": ("તાપી", "Tapi district, Gujarat, India"),
-    "tapi": ("તાપી", "Tapi district, Gujarat, India"),
+    "મહેસાણા": ("મહેસાણા", "Mehsana, Gujarat, India"),
+    "mahesana": ("મહેસાણા", "Mehsana, Gujarat, India"),
+    "mehsana": ("મહેસાણા", "Mehsana, Gujarat, India"),
+    "બનાસકાંઠા": ("બનાસકાંઠા", "Banaskantha, Gujarat, India"),
+    "banaskantha": ("બનાસકાંઠા", "Banaskantha, Gujarat, India"),
+    "પાટણ": ("પાટણ", "Patan, Gujarat, India"),
+    "patan": ("પાટણ", "Patan, Gujarat, India"),
+    "કચ્છ": ("કચ્છ", "Kutch, Gujarat, India"),
+    "kutch": ("કચ્છ", "Kutch, Gujarat, India"),
+    "સાબરકાંઠા": ("સાબરકાંઠા", "Sabarkantha, Gujarat, India"),
+    "sabarkantha": ("સાબરકાંઠા", "Sabarkantha, Gujarat, India"),
+    "અરવલ્લી": ("અરવલ્લી", "Aravalli, Gujarat, India"),
+    "aravalli": ("અરવલ્લી", "Aravalli, Gujarat, India"),
+    "ગાંધીનગર": ("ગાંધીનગર", "Gandhinagar, Gujarat, India"),
+    "gandhinagar": ("ગાંધીનગર", "Gandhinagar, Gujarat, India"),
+    "અમદાવાદ": ("અમદાવાદ", "Ahmedabad, Gujarat, India"),
+    "ahmedabad": ("અમદાવાદ", "Ahmedabad, Gujarat, India"),
+    "ખેડા": ("ખેડા", "Kheda, Gujarat, India"),
+    "kheda": ("ખેડા", "Kheda, Gujarat, India"),
+    "આણંદ": ("આણંદ", "Anand, Gujarat, India"),
+    "anand": ("આણંદ", "Anand, Gujarat, India"),
+    "વડોદરા": ("વડોદરા", "Vadodara, Gujarat, India"),
+    "vadodara": ("વડોદરા", "Vadodara, Gujarat, India"),
+    "સુરત": ("સુરત", "Surat, Gujarat, India"),
+    "surat": ("સુરત", "Surat, Gujarat, India"),
+    "ભરૂચ": ("ભરૂચ", "Bharuch, Gujarat, India"),
+    "bharuch": ("ભરૂચ", "Bharuch, Gujarat, India"),
+    "નર્મદા": ("નર્મદા", "Narmada, Gujarat, India"),
+    "narmada": ("નર્મદા", "Narmada, Gujarat, India"),
+    "વલસાડ": ("વલસાડ", "Valsad, Gujarat, India"),
+    "valsad": ("વલસાડ", "Valsad, Gujarat, India"),
+    "નવસારી": ("નવસારી", "Navsari, Gujarat, India"),
+    "navsari": ("નવસારી", "Navsari, Gujarat, India"),
+    "ડાંગ": ("ડાંગ", "Dang, Gujarat, India"),
+    "dang": ("ડાંગ", "Dang, Gujarat, India"),
+    "રાજકોટ": ("રાજકોટ", "Rajkot, Gujarat, India"),
+    "rajkot": ("રાજકોટ", "Rajkot, Gujarat, India"),
+    "જામનગર": ("જામનગર", "Jamnagar, Gujarat, India"),
+    "jamnagar": ("જામનગર", "Jamnagar, Gujarat, India"),
+    "જૂનાગઢ": ("જૂનાગઢ", "Junagadh, Gujarat, India"),
+    "junagadh": ("જૂનાગઢ", "Junagadh, Gujarat, India"),
+    "ભાવનગર": ("ભાવનગર", "Bhavnagar, Gujarat, India"),
+    "bhavnagar": ("ભાવનગર", "Bhavnagar, Gujarat, India"),
+    "અમરેલી": ("અમરેલી", "Amreli, Gujarat, India"),
+    "amreli": ("અમરેલી", "Amreli, Gujarat, India"),
+    "મોરબી": ("મોરબી", "Morbi, Gujarat, India"),
+    "morbi": ("મોરબી", "Morbi, Gujarat, India"),
+    "સુરેન્દ્રનગર": ("સુરેન્દ્રનગર", "Surendranagar, Gujarat, India"),
+    "surendranagar": ("સુરેન્દ્રનગર", "Surendranagar, Gujarat, India"),
+    "પોરબંદર": ("પોરબંદર", "Porbandar, Gujarat, India"),
+    "porbandar": ("પોરબંદર", "Porbandar, Gujarat, India"),
+    "ગીર સોમનાથ": ("ગીર સોમનાથ", "Gir Somnath, Gujarat, India"),
+    "gir somnath": ("ગીર સોમનાથ", "Gir Somnath, Gujarat, India"),
+    "દેવભૂમિ દ્વારકા": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka, Gujarat, India"),
+    "dwarka": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka, Gujarat, India"),
+    "બોટાદ": ("બોટાદ", "Botad, Gujarat, India"),
+    "botad": ("બોટાદ", "Botad, Gujarat, India"),
+    "મહીસાગર": ("મહીસાગર", "Mahisagar, Gujarat, India"),
+    "mahisagar": ("મહીસાગર", "Mahisagar, Gujarat, India"),
+    "પંચમહાલ": ("પંચમહાલ", "Panchmahal, Gujarat, India"),
+    "panchmahal": ("પંચમહાલ", "Panchmahal, Gujarat, India"),
+    "દાહોદ": ("દાહોદ", "Dahod, Gujarat, India"),
+    "dahod": ("દાહોદ", "Dahod, Gujarat, India"),
+    "છોટા ઉદેપુર": ("છોટા ઉદેપુર", "Chhota Udaipur, Gujarat, India"),
+    "chhota udaipur": ("છોટા ઉદેપુર", "Chhota Udaipur, Gujarat, India"),
+    "તાપી": ("તાપી", "Tapi, Gujarat, India"),
+    "tapi": ("તાપી", "Tapi, Gujarat, India"),
 }
 
 DISTRICT_BUILTIN_PINS = {
@@ -130,17 +130,27 @@ DISTRICT_BUILTIN_PINS = {
     ]
 }
 
+# અસલી નકશા જેવા બારીક ખાંચાખૂંચીવાળા (Natural Cartographic) જિલ્લા આકારો
 OFFLINE_DISTRICT_POLYGONS = {
     "મહેસાણા": [
-        [71.95, 23.45], [72.02, 23.62], [72.22, 23.68], [72.32, 23.85],
-        [72.52, 23.95], [72.72, 24.08], [72.83, 23.96], [72.78, 23.78],
-        [72.82, 23.54], [72.66, 23.44], [72.48, 23.36], [72.38, 23.21],
-        [72.22, 23.25], [72.18, 23.40], [71.95, 23.45]
+        [71.95, 23.45], [71.93, 23.51], [71.97, 23.57], [72.02, 23.62], [72.09, 23.61],
+        [72.16, 23.66], [72.22, 23.68], [72.24, 23.74], [72.29, 23.79], [72.32, 23.85],
+        [72.39, 23.87], [72.46, 23.93], [72.52, 23.95], [72.59, 23.99], [72.65, 24.06],
+        [72.72, 24.08], [72.79, 24.04], [72.83, 23.96], [72.81, 23.88], [72.76, 23.83],
+        [72.78, 23.78], [72.82, 23.70], [72.84, 23.61], [72.82, 23.54], [72.75, 23.50],
+        [72.70, 23.45], [72.66, 23.44], [72.58, 23.42], [72.53, 23.38], [72.48, 23.36],
+        [72.44, 23.28], [72.38, 23.21], [72.31, 23.22], [72.25, 23.24], [72.22, 23.25],
+        [72.21, 23.33], [72.18, 23.40], [72.10, 23.41], [72.03, 23.44], [71.95, 23.45]
     ],
     "પાટણ": [
-        [71.05, 23.72], [71.22, 23.96], [71.65, 24.00], [72.02, 24.00],
-        [72.44, 24.03], [72.48, 23.86], [72.26, 23.72], [72.18, 23.62],
-        [71.92, 23.44], [71.68, 23.47], [71.50, 23.65], [71.12, 23.62], [71.05, 23.72]
+        [71.03, 23.74], [71.07, 23.82], [71.13, 23.86], [71.18, 23.93], [71.25, 23.97],
+        [71.36, 23.95], [71.48, 23.99], [71.58, 23.96], [71.68, 24.01], [71.79, 23.98],
+        [71.90, 24.01], [72.02, 23.99], [72.12, 24.02], [72.23, 24.00], [72.34, 24.03],
+        [72.44, 24.01], [72.48, 23.93], [72.45, 23.86], [72.37, 23.82], [72.32, 23.76],
+        [72.25, 23.72], [72.21, 23.66], [72.16, 23.62], [72.08, 23.63], [72.02, 23.57],
+        [71.96, 23.49], [71.90, 23.44], [71.81, 23.43], [71.73, 23.45], [71.67, 23.49],
+        [71.62, 23.56], [71.56, 23.62], [71.48, 23.65], [71.38, 23.61], [71.27, 23.64],
+        [71.16, 23.61], [71.08, 23.66], [71.03, 23.74]
     ]
 }
 
@@ -236,7 +246,7 @@ def get_osm_en_for_guj_dist(guj_dist):
     for _kw, (gd, en_q) in GUJ_DIST_KEYWORDS.items():
         if gd == guj_dist:
             return en_q
-    return f"{guj_dist} district, Gujarat, India"
+    return f"{guj_dist}, Gujarat, India"
 
 def wants_map(text):
     t = (text or "").lower()
@@ -246,16 +256,40 @@ def wants_map(text):
         "રાજકીય", "ભૌગોલિક", "ગામનો", "gamno", "gamda", "ખેત ઉત્પાદન", "ઉદ્યોગો", "નદીઓ", "મતદાર", "વસ્તી ગણતરી", "blo"
     )) or len(extract_mentioned_districts(text)) > 0
 
-def _build_convex_hull_polygon(points, pad=0.08):
+def _organic_border_subdivide(poly, passes=2):
+    """સીધી રેખાઓને બદલે અસલી ભૌગોલિક નકશા જેવી ખાંચાખૂંચીવાળી સરહદ (Cartographic Fractal Border) બનાવે છે."""
+    pts = list(poly)
+    for p_idx in range(passes):
+        new_pts = []
+        n = len(pts)
+        for i in range(n - 1):
+            x1, y1 = pts[i]
+            x2, y2 = pts[i + 1]
+            new_pts.append([x1, y1])
+            dx, dy = x2 - x1, y2 - y1
+            seg_len = math.hypot(dx, dy)
+            if seg_len > 0.015:
+                nx, ny = -dy / seg_len, dx / seg_len
+                # ડિટર્મિનિસ્ટિક તરંગો જેથી આકાર હંમેશા સ્થિર અને કુદરતી રહે
+                w1 = math.sin((x1 + y1) * 47.0 + p_idx) * 0.11 * seg_len
+                w2 = math.cos((x2 - y2) * 53.0 + p_idx) * 0.11 * seg_len
+                new_pts.append([x1 + dx * 0.33 + nx * w1, y1 + dy * 0.33 + ny * w1])
+                new_pts.append([x1 + dx * 0.67 + nx * w2, y1 + dy * 0.67 + ny * w2])
+        new_pts.append(new_pts[0])
+        pts = new_pts
+    return pts
+
+def _build_convex_hull_polygon(points, pad=0.09):
     pts = sorted(set((round(p[0], 4), round(p[1], 4)) for p in points))
     if len(pts) < 3:
         cx = sum(p[0] for p in pts) / len(pts)
         cy = sum(p[1] for p in pts) / len(pts)
-        return [
+        base = [
             [cx - 0.18, cy - 0.12], [cx + 0.18, cy - 0.12],
             [cx + 0.22, cy + 0.04], [cx + 0.12, cy + 0.15],
             [cx - 0.14, cy + 0.14], [cx - 0.20, cy + 0.02], [cx - 0.18, cy - 0.12]
         ]
+        return _organic_border_subdivide(base, passes=2)
 
     def cross(o, a, b):
         return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
@@ -278,10 +312,9 @@ def _build_convex_hull_polygon(points, pad=0.08):
         ang = math.atan2(hy - cy, hx - cx)
         padded.append([hx + math.cos(ang) * pad, hy + math.sin(ang) * pad])
     padded.append(padded[0])
-    return padded
+    return _organic_border_subdivide(padded, passes=2)
 
 def _polygon_covers_pins(poly_xs, poly_ys, pins):
-    """તપાસે છે કે દોરેલો પીળો આકાર બધા જ તાલુકા અને ગામડાંને પોતાની અંદર સમાવે છે કે નહીં."""
     if not poly_xs or not pins:
         return True
     min_px, max_px = min(poly_xs), max(poly_xs)
@@ -392,6 +425,19 @@ def _polygon_centroid(pts):
     ys = [p[1] for p in pts]
     return (sum(xs) / len(xs), sum(ys) / len(ys))
 
+def _draw_cartographic_border(ax, poly, facecolor="#FEF08A", edgecolor="#991B1B"):
+    """અસલી નકશાપોથી (Atlas) જેવી ડબલ-લાઈન સરહદી હદ શૈલી દોરે છે."""
+    # બહારનો હળવો પડછાયો / બોર્ડર
+    ax.add_patch(patches.Polygon(
+        poly, closed=True, facecolor="none", edgecolor="#F87171",
+        linewidth=4.2, alpha=0.38, joinstyle="round", zorder=2
+    ))
+    # અંદરનો મુખ્ય પીળો/રંગીન નકશો અને ઘેરી સરહદી હદ
+    ax.add_patch(patches.Polygon(
+        poly, closed=True, facecolor=facecolor, edgecolor=edgecolor,
+        linewidth=2.0, alpha=0.96, joinstyle="round", zorder=3
+    ))
+
 def render_textbook_map_png(spec, raw_query=""):
     if not HAS_MPL:
         return None
@@ -473,7 +519,7 @@ def render_textbook_map_png(spec, raw_query=""):
             feat = osm_geo["features"][0]
             polys = _extract_polygons_from_geom(feat.get("geometry") or {})
             for poly in polys:
-                map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor="#FEF08A", edgecolor="#B91C1C", linewidth=2.2, alpha=0.95, joinstyle="round"))
+                _draw_cartographic_border(map_ax, poly, facecolor="#FEF08A", edgecolor="#991B1B")
                 for px, py in poly:
                     all_x.append(px)
                     all_y.append(py)
@@ -555,20 +601,41 @@ def render_textbook_map_png(spec, raw_query=""):
     elif region == "gujarat":
         all_x, all_y = [], []
         target_dists = mentioned_dists or list(hl_map.keys())
+        geo = load_real_geojson("gujarat")
 
         if only_selected and target_dists:
             for idx_td, d_name in enumerate(target_dists):
                 col = HIGHLIGHT_COLORS[idx_td % len(HIGHLIGHT_COLORS)]
                 drawn_this = False
-                # ૧. જો બિલ્ટ-ઇન આકાર હોય અને બધા તાલુકા તેમાં સમાતા હોય તો તે વાપરો
-                if d_name in OFFLINE_DISTRICT_POLYGONS:
-                    poly = OFFLINE_DISTRICT_POLYGONS[d_name]
-                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=col, edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
-                    for px, py in poly:
+
+                # ૧. પહેલા ગુજરાતના અસલી GeoJSON (gujarat_real_districts) માંથી શોધો
+                if geo and geo.get("features"):
+                    for feat in geo["features"]:
+                        props = feat.get("properties") or {}
+                        raw_dist = str(props.get("NAME_2") or props.get("DISTRICT") or props.get("dtname") or props.get("district") or "").strip()
+                        guj_name, _z = DISTRICT_EN_TO_GUJ.get(raw_dist.lower(), (raw_dist, "central"))
+                        if d_name in guj_name or guj_name in d_name:
+                            polys = _extract_polygons_from_geom(feat.get("geometry") or {})
+                            cand_x = [px for poly in polys for px, _ in poly]
+                            cand_y = [py for poly in polys for _, py in poly]
+                            if polys and _polygon_covers_pins(cand_x, cand_y, pins_to_draw):
+                                for poly in polys:
+                                    _draw_cartographic_border(map_ax, poly, facecolor=col, edgecolor="#991B1B")
+                                all_x.extend(cand_x)
+                                all_y.extend(cand_y)
+                                drawn_this = True
+                                break
+
+                # ૨. ન મળે તો બિલ્ટ-ઇન પ્રાકૃતિક ખાંચાખૂંચીવાળી સરહદ (Organic Cartographic Border) વાપરો
+                if not drawn_this and d_name in OFFLINE_DISTRICT_POLYGONS:
+                    organic_poly = _organic_border_subdivide(OFFLINE_DISTRICT_POLYGONS[d_name], passes=2)
+                    _draw_cartographic_border(map_ax, organic_poly, facecolor=col, edgecolor="#991B1B")
+                    for px, py in organic_poly:
                         all_x.append(px)
                         all_y.append(py)
                     drawn_this = True
-                # ૨. નહીંતર OSM પરથી લાવો અને તપાસો કે બધા તાલુકા તેની અંદર સમાય છે કે નહીં
+
+                # ૩. અન્ય જિલ્લા માટે OSM અસલી સરહદ લાવો
                 if not drawn_this:
                     osm_d = fetch_osm_real_boundary(get_osm_en_for_guj_dist(d_name))
                     if osm_d and osm_d.get("features"):
@@ -577,39 +644,37 @@ def render_textbook_map_png(spec, raw_query=""):
                         cand_y = [py for poly in polys for _, py in poly]
                         if polys and _polygon_covers_pins(cand_x, cand_y, pins_to_draw):
                             for poly in polys:
-                                map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=col, edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
+                                _draw_cartographic_border(map_ax, poly, facecolor=col, edgecolor="#991B1B")
                             all_x.extend(cand_x)
                             all_y.extend(cand_y)
                             drawn_this = True
 
-        if not all_x and not only_selected:
-            geo = load_real_geojson("gujarat")
-            if geo and geo.get("features"):
-                for idx_d, feat in enumerate(geo["features"]):
-                    props = feat.get("properties") or {}
-                    raw_dist = str(props.get("NAME_2") or props.get("DISTRICT") or props.get("dtname") or props.get("district") or "").strip()
-                    guj_name, zone = DISTRICT_EN_TO_GUJ.get(raw_dist.lower(), (raw_dist, "central"))
-                    matched_hl = next((v for k, v in hl_map.items() if k in guj_name or guj_name in k or k.lower() in raw_dist.lower()), None)
+        if not all_x and not only_selected and geo and geo.get("features"):
+            for idx_d, feat in enumerate(geo["features"]):
+                props = feat.get("properties") or {}
+                raw_dist = str(props.get("NAME_2") or props.get("DISTRICT") or props.get("dtname") or props.get("district") or "").strip()
+                guj_name, zone = DISTRICT_EN_TO_GUJ.get(raw_dist.lower(), (raw_dist, "central"))
+                matched_hl = next((v for k, v in hl_map.items() if k in guj_name or guj_name in k or k.lower() in raw_dist.lower()), None)
 
-                    fc = matched_hl.get("color") if matched_hl else ("#F1F5F9" if hl_map else ZONE_COLORS.get(zone, "#E2E8F0"))
-                    ec = "#B91C1C" if matched_hl else "#334155"
-                    lw = 2.4 if matched_hl else 0.9
+                fc = matched_hl.get("color") if matched_hl else ("#F1F5F9" if hl_map else ZONE_COLORS.get(zone, "#E2E8F0"))
+                ec = "#B91C1C" if matched_hl else "#334155"
+                lw = 2.2 if matched_hl else 0.9
 
-                    polys = _extract_polygons_from_geom(feat.get("geometry") or {})
-                    biggest = max(polys, key=len) if polys else []
-                    for poly in polys:
-                        map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=fc, edgecolor=ec, linewidth=lw, alpha=0.96, joinstyle="round"))
-                        for px, py in poly:
-                            all_x.append(px)
-                            all_y.append(py)
-                    if biggest and not pins_to_draw:
-                        cx, cy = _polygon_centroid(biggest)
-                        map_ax.text(cx, cy, guj_name, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl if matched_hl else fp_small)
+                polys = _extract_polygons_from_geom(feat.get("geometry") or {})
+                biggest = max(polys, key=len) if polys else []
+                for poly in polys:
+                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=fc, edgecolor=ec, linewidth=lw, alpha=0.96, joinstyle="round"))
+                    for px, py in poly:
+                        all_x.append(px)
+                        all_y.append(py)
+                if biggest and not pins_to_draw:
+                    cx, cy = _polygon_centroid(biggest)
+                    map_ax.text(cx, cy, guj_name, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl if matched_hl else fp_small)
 
-        # ૩. જો હજુ પણ સરહદ ન મળી હોય (જેમ કે બનાસકાંઠા, કચ્છ, રાજકોટ વગેરે), તો બધા તાલુકા/ગામોની ફરતે પીળો નકશો બનાવો
+        # ૪. જો હજુ પણ સરહદ ન મળી હોય તો તાલુકા/ગામોની ફરતે પ્રાકૃતિક ખાંચાખૂંચીવાળી સરહદ બનાવો
         if not all_x and pins_to_draw:
             hull_poly = _build_convex_hull_polygon([(p["lon"], p["lat"]) for p in pins_to_draw], pad=0.09)
-            map_ax.add_patch(patches.Polygon(hull_poly, closed=True, facecolor="#FEF08A", edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
+            _draw_cartographic_border(map_ax, hull_poly, facecolor="#FEF08A", edgecolor="#991B1B")
             for px, py in hull_poly:
                 all_x.append(px)
                 all_y.append(py)
@@ -620,8 +685,8 @@ def render_textbook_map_png(spec, raw_query=""):
                 if only_selected:
                     if not any((min(all_x) - 0.15 <= x <= max(all_x) + 0.15 and min(all_y) - 0.15 <= y <= max(all_y) + 0.15) for x, y in pts):
                         continue
-                map_ax.plot(xs, ys, color="#0284C7", linewidth=2.2, alpha=0.8)
-                map_ax.text(xs[1], ys[1] + 0.03, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_small)
+                map_ax.plot(xs, ys, color="#0284C7", linewidth=2.2, alpha=0.8, zorder=4)
+                map_ax.text(xs[1], ys[1] + 0.03, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_small, zorder=5)
 
         if pins_to_draw:
             for p in pins_to_draw:
