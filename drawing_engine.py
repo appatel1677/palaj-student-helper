@@ -1,5 +1,7 @@
 import re
 import asyncio
+import urllib.request
+import urllib.parse
 from google.genai import types
 
 NANO_BANANA_MODELS = [
@@ -13,7 +15,9 @@ def wants_any_drawing_or_diagram(text):
         "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "ચિત્ર", "chitra", "chira", "chitran",
         "દોરો", "દોરી", "doro", "dori", "બનાવો", "banavo", "banavi",
         "diagram", "draw", "drawing", "sketch", "image", "picture", "photo", "painting", "nano banana",
-        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "કંઠસ્થન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં", "મંદિર", "સૂર્ય", "વૃક્ષ"
+        "બાળક", "balak", "ગાય", "gay", "cow", "વાછરડું", "વાછરડા", "ફૂલ", "ful", "પ્રાણી", "પક્ષી",
+        "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ",
+        "કંઠસ્થાન", "કંઠસ્થન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં", "મંદિર", "સૂર્ય", "વૃક્ષ", "ઝાડ"
     ))
 
 def is_scientific_diagram_request(query_text):
@@ -74,28 +78,61 @@ def get_curated_textbook_svg(query_text):
 </svg>'''
     return None
 
-async def generate_nano_banana_image_async(query_text, api_keys, get_client_fn):
-    if not api_keys:
-        return None
-    prompt = (
-        f"Create a clean, colorful, child-friendly Indian elementary school (Grades 3-8) textbook illustration for: {query_text}. "
-        "Make it bright, clear, educational, accurate, with a clean white or soft pastel background and zero garbled text."
-    )
-    for key in api_keys:
-        client = get_client_fn(key)
-        for img_mod in NANO_BANANA_MODELS:
+def _fetch_free_ai_illustration_sync(en_prompt):
+    """ફ્રી API Key પર Nano Banana ન ચાલે ત્યારે Pollinations AI પરથી રંગીન શૈક્ષણિક ચિત્ર લાવે છે."""
+    try:
+        clean_p = urllib.parse.quote(f"colorful Indian elementary school textbook illustration of {en_prompt}, cute, bright, clean background, no text")
+        url = f"https://image.pollinations.ai/prompt/{clean_p}?width=768&height=512&nologo=true&seed=42"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=18) as resp:
+            data = resp.read()
+            if data and len(data) > 4000:
+                return data
+    except Exception:
+        pass
+    return None
+
+async def generate_nano_banana_image_async(query_text, api_keys, get_client_fn, get_models_fn):
+    en_prompt = query_text
+    if api_keys:
+        client = get_client_fn(api_keys[0])
+        models_list = await asyncio.to_thread(get_models_fn, api_keys[0], "gemini-2.5-flash")
+        for mod in models_list:
             try:
-                res = await client.aio.models.generate_content(
-                    model=img_mod,
-                    contents=[prompt],
-                    config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+                tr = await client.aio.models.generate_content(
+                    model=mod,
+                    contents=[f"Translate this drawing request into a short, vivid English image prompt (max 18 words, output ONLY English text): {query_text}"]
                 )
-                for cand in (res.candidates or []):
-                    for part in (cand.content.parts or []):
-                        if getattr(part, "inline_data", None) and part.inline_data.data:
-                            return ("png", part.inline_data.data)
+                if tr.text and tr.text.strip():
+                    en_prompt = tr.text.strip()
+                    break
             except Exception:
-                continue
+                pass
+
+    # ૧. પહેલા Nano Banana અજમાવો
+    if api_keys:
+        prompt = f"Create a clean, colorful, child-friendly Indian school textbook illustration for: {en_prompt}. Bright, clear, educational, zero text."
+        for key in api_keys:
+            client = get_client_fn(key)
+            for img_mod in NANO_BANANA_MODELS:
+                try:
+                    res = await client.aio.models.generate_content(
+                        model=img_mod,
+                        contents=[prompt],
+                        config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+                    )
+                    for cand in (res.candidates or []):
+                        for part in (cand.content.parts or []):
+                            if getattr(part, "inline_data", None) and part.inline_data.data:
+                                return ("png", part.inline_data.data)
+                except Exception:
+                    continue
+
+    # ૨. ફ્રી API Key પર Nano Banana ન ચાલે તો Free AI Image Generator પરથી રંગીન ચિત્ર લાવો
+    free_png = await asyncio.to_thread(_fetch_free_ai_illustration_sync, en_prompt)
+    if free_png:
+        return ("png", free_png)
+
     return None
 
 async def generate_clean_drawing_async(query_text, api_keys, get_client_fn, get_models_fn):
@@ -127,7 +164,7 @@ async def generate_clean_drawing_async(query_text, api_keys, get_client_fn, get_
                     except Exception:
                         pass
 
-    nb_img = await generate_nano_banana_image_async(query_text, api_keys, get_client_fn)
+    nb_img = await generate_nano_banana_image_async(query_text, api_keys, get_client_fn, get_models_fn)
     if nb_img:
         return nb_img
 
