@@ -1,5 +1,7 @@
 import os
+import glob
 import sqlite3
+import subprocess
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -97,10 +99,33 @@ def init_chainlit_sqlite_db():
 
 init_chainlit_sqlite_db()
 
+class LocalFileStorageProvider:
+    def __init__(self, base_dir=".files"):
+        self.base_dir = os.path.abspath(base_dir)
+        os.makedirs(self.base_dir, exist_ok=True)
+
+    async def upload_file(self, object_key: str, data: bytes | str, mime: str = "application/octet-stream", overwrite: bool = True, content_disposition: str | None = None):
+        full_path = os.path.join(self.base_dir, object_key.replace("/", os.sep))
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        raw = data.encode("utf-8") if isinstance(data, str) else data
+        with open(full_path, "wb") as f:
+            f.write(raw)
+        return {"object_key": object_key, "url": f"/files/{object_key}"}
+
+    async def delete_file(self, object_key: str) -> bool:
+        full_path = os.path.join(self.base_dir, object_key.replace("/", os.sep))
+        if os.path.exists(full_path):
+            os.remove(full_path)
+            return True
+        return False
+
+    async def get_read_url(self, object_key: str) -> str:
+        return f"/files/{object_key}"
+
 @cl.data_layer
 def get_data_layer():
     db_url = f"sqlite+aiosqlite:///{DB_FILE.replace(chr(92), '/')}"
-    return SQLAlchemyDataLayer(conninfo=db_url)
+    return SQLAlchemyDataLayer(conninfo=db_url, storage_provider=LocalFileStorageProvider(".files"))
 
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
@@ -169,12 +194,40 @@ def get_working_models_for_key(api_key, preferred_model="gemini-2.5-flash"):
 
 def get_pdf_font():
     global _PDF_FONT_CACHE
-    if _PDF_FONT_CACHE:
+    if _PDF_FONT_CACHE and os.path.exists(_PDF_FONT_CACHE):
         return _PDF_FONT_CACHE
-    for p in ["C:/Windows/Fonts/Nirmala.ttf", "C:/Windows/Fonts/Shruti.ttf", "NotoSansGujarati-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf"]:
+
+    candidates = [
+        "NotoSansGujarati-Regular.ttf",
+        "C:/Windows/Fonts/Nirmala.ttf",
+        "C:/Windows/Fonts/Shruti.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansGujarati-Regular.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansGujarati-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSerifGujarati-Regular.ttf",
+    ]
+    for p in candidates:
         if os.path.exists(p):
             _PDF_FONT_CACHE = p
             return p
+
+    for found in glob.glob("/usr/share/fonts/**/*Gujarati*.ttf", recursive=True):
+        if os.path.exists(found):
+            _PDF_FONT_CACHE = found
+            return found
+
+    local_dl = os.path.abspath("geo_cache/NotoSansGujarati-Regular.ttf")
+    if os.path.exists(local_dl):
+        _PDF_FONT_CACHE = local_dl
+        return local_dl
+    try:
+        url = "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSansGujarati/NotoSansGujarati-Regular.ttf"
+        urllib.request.urlretrieve(url, local_dl)
+        if os.path.exists(local_dl) and os.path.getsize(local_dl) > 10000:
+            _PDF_FONT_CACHE = local_dl
+            return local_dl
+    except Exception:
+        pass
+
     return None
 
 def svg_to_png_bytes(svg_code):
@@ -266,26 +319,6 @@ def format_friendly_error(err_str):
         return "તમારી GEMINI_API_KEY ખોટી છે. Environment Variables માં તપાસો."
     return f"કનેક્શન સમસ્યા: {e[:140]}"
 
-async def transcribe_gujarati_bytes_async(audio_bytes, mime_type, api_keys, preferred_model="gemini-2.5-flash"):
-    if not HAS_GENAI or not api_keys or not audio_bytes or len(audio_bytes) < 100:
-        return "", "API Key અથવા ઓડિયો ઉપલબ્ધ નથી."
-    prompt = "Transcribe ONLY the exact spoken words in Gujarati script (ગુજરાતી લિપિ). No extra text."
-    last_err = ""
-    for key in api_keys:
-        client = get_cached_client(key)
-        models_list = await asyncio.to_thread(get_working_models_for_key, key, preferred_model)
-        for mod in models_list:
-            try:
-                resp = await client.aio.models.generate_content(
-                    model=mod,
-                    contents=[types.Part.from_bytes(data=audio_bytes, mime_type=mime_type or "audio/webm"), prompt]
-                )
-                if resp and resp.text and resp.text.strip():
-                    return resp.text.strip(), ""
-            except Exception as e:
-                last_err = str(e)
-    return "", format_friendly_error(last_err)
-
 def load_syllabus():
     global _SYLLABUS_CACHE
     if _SYLLABUS_CACHE is not None:
@@ -298,7 +331,7 @@ def load_syllabus():
     return _SYLLABUS_CACHE
 
 # ==============================================================================
-# REAL GIS MAP ENGINE + MULTI-DISTRICT ZOOM ENGINE
+# REAL GIS MAP ENGINE + DISTRICT TALUKA & VILLAGE PINS ENGINE
 # ==============================================================================
 GUJ_DIST_KEYWORDS = {
     "મહેસાણા": "મહેસાણા", "mahesana": "મહેસાણા", "mehsana": "મહેસાણા",
@@ -334,6 +367,36 @@ GUJ_DIST_KEYWORDS = {
     "દાહોદ": "દાહોદ", "dahod": "દાહોદ",
     "છોટા ઉદેપુર": "છોટા ઉદેપુર", "chhota udaipur": "છોટા ઉદેપુર",
     "તાપી": "તાપી", "tapi": "તાપી",
+}
+
+# મહેસાણા જિલ્લાના તમામ ૧૦ તાલુકા મથકો અને મુખ્ય ગામો (અસલી GPS અક્ષાંશ-રેખાંશ)
+DISTRICT_BUILTIN_PINS = {
+    "મહેસાણા": [
+        # ૧૦ તાલુકા મથકો
+        {"name": "મહેસાણા", "lon": 72.3693, "lat": 23.5880, "type": "taluka"},
+        {"name": "વિસનગર", "lon": 72.5522, "lat": 23.6987, "type": "taluka"},
+        {"name": "ઊંઝા", "lon": 72.3912, "lat": 23.8037, "type": "taluka"},
+        {"name": "કડી", "lon": 72.3336, "lat": 23.2991, "type": "taluka"},
+        {"name": "ખેરાલુ", "lon": 72.6133, "lat": 23.8861, "type": "taluka"},
+        {"name": "વડનગર", "lon": 72.6331, "lat": 23.7852, "type": "taluka"},
+        {"name": "વિજાપુર", "lon": 72.7525, "lat": 23.5612, "type": "taluka"},
+        {"name": "બેચરાજી", "lon": 72.0461, "lat": 23.5015, "type": "taluka"},
+        {"name": "સતલાસણા", "lon": 72.7358, "lat": 24.0061, "type": "taluka"},
+        {"name": "જોટાણા", "lon": 72.3168, "lat": 23.4756, "type": "taluka"},
+        # મુખ્ય ગામો (પલાજ સહિત)
+        {"name": "પલાજ", "lon": 72.4265, "lat": 23.5535, "type": "village"},
+        {"name": "મોઢેરા", "lon": 72.1332, "lat": 23.5835, "type": "village"},
+        {"name": "તારંગા", "lon": 72.7562, "lat": 23.9631, "type": "village"},
+        {"name": "લાંઘણજ", "lon": 72.4950, "lat": 23.4520, "type": "village"},
+        {"name": "ગોઝારિયા", "lon": 72.6010, "lat": 23.4890, "type": "village"},
+        {"name": "આંબલિયાસણ", "lon": 72.4410, "lat": 23.4830, "type": "village"},
+        {"name": "ઉનાવા", "lon": 72.3735, "lat": 23.7580, "type": "village"},
+        {"name": "ભાંડુ", "lon": 72.3780, "lat": 23.6940, "type": "village"},
+        {"name": "નંદાસણ", "lon": 72.4110, "lat": 23.3820, "type": "village"},
+        {"name": "સુંઢિયા", "lon": 72.5780, "lat": 23.8210, "type": "village"},
+        {"name": "કુકસ", "lon": 72.4150, "lat": 23.6350, "type": "village"},
+        {"name": "લડાલ", "lon": 72.6850, "lat": 23.6320, "type": "village"},
+    ]
 }
 
 def extract_mentioned_districts(query_text):
@@ -403,7 +466,7 @@ ZONE_COLORS = {
     "kutch": "#DCE775", "north": "#F8BBD0", "central": "#FFCC80",
     "saurashtra": "#CE93D8", "south": "#80DEEA", "west": "#DCE775", "east": "#80DEEA",
 }
-HIGHLIGHT_COLORS = ["#FACC15", "#38BDF8", "#F472B6", "#4ADE80", "#FB923C", "#A78BFA", "#2DD4BF", "#F87171"]
+HIGHLIGHT_COLORS = ["#FEF08A", "#BAE6FD", "#FBCFE8", "#BBF7D0", "#FED7AA", "#DDD6FE", "#99F6E4", "#FECACA"]
 PASTEL_PALETTE = ["#FDE68A", "#BAE6FD", "#FBCFE8", "#BBF7D0", "#DDD6FE", "#FED7AA", "#99F6E4", "#FECACA", "#E9D5FF", "#BFDBFE"]
 
 GUJARAT_RIVERS_GEO = [
@@ -527,11 +590,20 @@ def render_textbook_map_png(spec, raw_query=""):
     if not HAS_MPL:
         return None
     font_path = get_pdf_font()
+    if font_path:
+        try:
+            font_manager.fontManager.addfont(font_path)
+            prop_name = font_manager.FontProperties(fname=font_path).get_name()
+            plt.rcParams["font.sans-serif"] = [prop_name, "DejaVu Sans"]
+            plt.rcParams["font.family"] = "sans-serif"
+        except Exception:
+            pass
+
     fp_title = font_manager.FontProperties(fname=font_path, size=14, weight="bold") if font_path else None
     fp_sub = font_manager.FontProperties(fname=font_path, size=10.5, weight="bold") if font_path else None
-    fp_lbl = font_manager.FontProperties(fname=font_path, size=9.5, weight="bold") if font_path else None
+    fp_lbl = font_manager.FontProperties(fname=font_path, size=9.2, weight="bold") if font_path else None
     fp_leg = font_manager.FontProperties(fname=font_path, size=8.8) if font_path else None
-    fp_small = font_manager.FontProperties(fname=font_path, size=7.8, weight="bold") if font_path else None
+    fp_small = font_manager.FontProperties(fname=font_path, size=7.6, weight="bold") if font_path else None
 
     fig = plt.figure(figsize=(13.0, 8.4), dpi=170)
     fig.patch.set_facecolor("#F5F5F4")
@@ -567,6 +639,22 @@ def render_textbook_map_png(spec, raw_query=""):
     only_selected = bool(spec.get("only_selected", False)) or (len(mentioned_dists) >= 1)
     q_low = (raw_query or "").lower()
     force_rivers = bool(spec.get("show_rivers", False)) or any(w in q_low for w in ("નદી", "nadi", "river", "નર્મદા", "તાપી", "સાબરમતી", "ગંગા", "ભૌગોલિક", "bhaugolik"))
+
+    # જિલ્લાની અંદરના તાલુકા મથકો અને ગામોના પિન્સ (Pins)
+    pins_to_draw = []
+    for d_name in mentioned_dists:
+        if d_name in DISTRICT_BUILTIN_PINS:
+            pins_to_draw.extend(DISTRICT_BUILTIN_PINS[d_name])
+    for p_item in (spec.get("pins") or []):
+        try:
+            p_name = str(p_item.get("name", "")).strip()
+            p_lat = float(p_item.get("lat"))
+            p_lon = float(p_item.get("lon"))
+            p_type = str(p_item.get("type", "village")).lower()
+            if p_name and not any(existing["name"] == p_name for existing in pins_to_draw):
+                pins_to_draw.append({"name": p_name, "lat": p_lat, "lon": p_lon, "type": p_type})
+        except Exception:
+            continue
 
     if region == "local":
         search_en = str(spec.get("osm_query_en") or "Mehsana, Gujarat, India").strip()
@@ -679,11 +767,9 @@ def render_textbook_map_png(spec, raw_query=""):
                     for px, py in poly:
                         all_x.append(px)
                         all_y.append(py)
-                if biggest:
+                if biggest and not pins_to_draw:
                     cx, cy = _polygon_centroid(biggest)
                     map_ax.text(cx, cy, guj_name, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl if (only_selected or matched_hl) else fp_small)
-                    if matched_hl and matched_hl.get("label") and matched_hl.get("label") != guj_name:
-                        map_ax.text(cx, cy - 0.14, f"▲ {matched_hl.get('label')[:16]}", ha="center", va="center", color="#991B1B", fontproperties=fp_small)
 
             if force_rivers and all_x and all_y:
                 for r_name, pts in GUJARAT_RIVERS_GEO:
@@ -691,12 +777,26 @@ def render_textbook_map_png(spec, raw_query=""):
                     if only_selected:
                         if not any((min(all_x) - 0.1 <= x <= max(all_x) + 0.1 and min(all_y) - 0.1 <= y <= max(all_y) + 0.1) for x, y in pts):
                             continue
-                    map_ax.plot(xs, ys, color="#0284C7", linewidth=2.6)
-                    map_ax.text(xs[1], ys[1] + 0.05, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_lbl)
+                    map_ax.plot(xs, ys, color="#0284C7", linewidth=2.2, alpha=0.8)
+                    map_ax.text(xs[1], ys[1] + 0.03, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_small)
+
+            # જિલ્લાની અંદરના તાલુકા મથકો અને ગામો દોરો
+            if pins_to_draw:
+                for p in pins_to_draw:
+                    px, py = p["lon"], p["lat"]
+                    is_taluka = p.get("type") == "taluka"
+                    if is_taluka:
+                        map_ax.scatter([px], [py], s=75, marker="*", color="#DC2626", edgecolor="#0F172A", linewidth=0.7, zorder=6)
+                        map_ax.text(px, py + 0.014, p["name"], ha="center", va="bottom", color="#991B1B", fontproperties=fp_lbl,
+                                    bbox=dict(boxstyle="round,pad=0.12", facecolor="#FFFFFF", edgecolor="none", alpha=0.75), zorder=7)
+                    else:
+                        map_ax.scatter([px], [py], s=26, marker="o", color="#1D4ED8", edgecolor="#FFFFFF", linewidth=0.6, zorder=5)
+                        map_ax.text(px, py - 0.012, p["name"], ha="center", va="top", color="#1E3A8A", fontproperties=fp_small,
+                                    bbox=dict(boxstyle="round,pad=0.08", facecolor="#FFFFFF", edgecolor="none", alpha=0.68), zorder=6)
 
             if all_x and all_y:
-                dx = max((max(all_x) - min(all_x)) * 0.14, 0.22)
-                dy = max((max(all_y) - min(all_y)) * 0.14, 0.22)
+                dx = max((max(all_x) - min(all_x)) * 0.14, 0.15)
+                dy = max((max(all_y) - min(all_y)) * 0.14, 0.15)
                 map_ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
                 map_ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
                 map_ax.set_aspect("equal", adjustable="datalim")
@@ -722,6 +822,12 @@ def render_textbook_map_png(spec, raw_query=""):
         legend_items = [{"color": v["color"], "label": v.get("label") or k} for k, v in hl_map.items()]
     else:
         legend_items = spec.get("legend") or default_legends.get(region, default_legends["gujarat"])
+
+    if pins_to_draw:
+        legend_items = [
+            {"color": "#DC2626", "label": "★ તાલુકા મથક"},
+            {"color": "#1D4ED8", "label": "● મુખ્ય ગામ"},
+        ] + list(legend_items)
     if force_rivers:
         legend_items = [{"color": "#0284C7", "label": "મુખ્ય નદીઓ"}] + list(legend_items)
 
@@ -872,27 +978,6 @@ async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=
                         return ("svg", m.group(1))
                 except Exception:
                     pass
-
-    img_prompt = (
-        f"Educational Indian school textbook dual map infographic for: {query_text}."
-        if is_infographic_map else
-        f"Clean educational Indian NCERT school textbook diagram with clear labels for: {query_text}."
-    )
-    for key in api_keys:
-        client = get_cached_client(key)
-        for nb_model in DEFAULT_IMAGE_MODELS:
-            try:
-                res = await client.aio.models.generate_content(
-                    model=nb_model,
-                    contents=[img_prompt],
-                    config=types.GenerateContentConfig(response_modalities=["IMAGE"])
-                )
-                for cand in getattr(res, "candidates", []) or []:
-                    for part in getattr(cand.content, "parts", []) or []:
-                        if getattr(part, "inline_data", None) and getattr(part.inline_data, "data", None):
-                            return ("png", part.inline_data.data)
-            except Exception:
-                pass
     return None
 
 def build_math_fraction_svg(query_text):
@@ -927,13 +1012,6 @@ def wants_map(text):
         "સંજ્ઞા વડે", "નકશામાં દર્શાવો", "કિલ્લા", "મગધ", "પ્રદેશો",
         "રાજકીય", "ભૌગોલિક", "ગામનો", "gamno", "gamda", "ખેત ઉત્પાદન", "ઉદ્યોગો", "નદીઓ", "મતદાર", "વસ્તી ગણતરી", "blo"
     ))
-
-def wants_taluka_dual_infographic_map(text):
-    t = (text or "").lower()
-    if len(extract_mentioned_districts(text)) >= 1:
-        return False
-    is_taluka_or_village = any(w in t for w in ("તાલુકો", "તાલુકા", "taluko", "taluka", "ગામ", "gam"))
-    return wants_map(t) and is_taluka_or_village
 
 def wants_any_drawing_or_diagram(text):
     t = (text or "").lower()
@@ -998,7 +1076,7 @@ def detect_default_map_spec(query_text):
             "region": "gujarat",
             "only_selected": True,
             "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ",
-            "title": f"{', '.join(dist_list)} જિલ્લાનો નકશો",
+            "title": f"{', '.join(dist_list)} જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો",
             "show_rivers": True,
             "highlights": hls,
         }
@@ -1053,6 +1131,7 @@ def ensure_thread_files_dir():
         os.makedirs(os.path.join(".files", tid), exist_ok=True)
 
 async def prewarm_geo_cache():
+    await asyncio.to_thread(get_pdf_font)
     await asyncio.to_thread(load_real_geojson, "gujarat")
     await asyncio.to_thread(load_real_geojson, "india")
 
@@ -1102,33 +1181,6 @@ async def on_chat_resume(thread):
 async def on_settings_update(settings):
     if settings and settings.get("model_choice"):
         cl.user_session.set("model_choice", settings["model_choice"])
-
-@cl.on_audio_chunk
-async def on_audio_chunk(chunk: cl.InputAudioChunk):
-    if chunk.isStart:
-        cl.user_session.set("audio_buffer", io.BytesIO())
-        cl.user_session.set("audio_mime", chunk.mimeType or "audio/webm")
-    buf = cl.user_session.get("audio_buffer")
-    if buf is not None:
-        buf.write(chunk.data)
-
-@cl.on_audio_end
-async def on_audio_end():
-    buf = cl.user_session.get("audio_buffer")
-    mime = cl.user_session.get("audio_mime", "audio/webm")
-    if not buf:
-        return
-    audio_bytes = buf.getvalue()
-    cl.user_session.set("audio_buffer", None)
-
-    api_keys = get_api_keys()
-    model_choice = cl.user_session.get("model_choice", ACTIVE_MODELS[0])
-    spoken, err = await transcribe_gujarati_bytes_async(audio_bytes, mime, api_keys, model_choice)
-    if spoken:
-        await cl.Message(content=f"🎤 **તમે બોલ્યા:** {spoken}", author="User").send()
-        await process_teacher_query(spoken, [])
-    elif err:
-        await cl.Message(content=f"⚠️ {err}").send()
 
 @cl.action_callback("quick_summary")
 @cl.action_callback("quick_exercise")
@@ -1204,7 +1256,6 @@ async def process_teacher_query(clean_q: str, elements: list):
     syllabus_data = load_syllabus()
     grade, subject, local_pdf_paths = resolve_grade_subject_and_pdfs(clean_q, syllabus_data)
     is_map_q = wants_map(clean_q)
-    is_taluka_dual = wants_taluka_dual_infographic_map(clean_q)
     math_svg_code = build_math_fraction_svg(clean_q) if not is_map_q else None
     is_drawing_q = wants_any_drawing_or_diagram(clean_q) and not is_map_q and not math_svg_code
 
@@ -1214,22 +1265,18 @@ async def process_teacher_query(clean_q: str, elements: list):
     img_task = None
     if is_drawing_q:
         img_task = asyncio.create_task(generate_clean_drawing_async(clean_q, api_keys, is_infographic_map=False))
-    elif is_taluka_dual:
-        img_task = asyncio.create_task(generate_clean_drawing_async(clean_q, api_keys, is_infographic_map=True))
 
     visual_instruction = ""
-    if is_map_q and not is_taluka_dual:
+    if is_map_q:
         visual_instruction = (
             "\n**મહત્વની સૂચના:** પ્રશ્ન મુજબ સાચો ```map_json બ્લોક ફરજિયાત આપો:\n"
-            "- જો **ભારતના રાજ્યો** પૂછ્યા હોય (જેમ કે ગુજરાત, રાજસ્થાન, દિલ્હી), તો `\"region\": \"india\"` રાખો અને `\"highlights\"` માં દરેક રાજ્ય માટે અલગ `color` આપો.\n"
-            "- જો **ગુજરાતના જિલ્લા** પૂછ્યા હોય, તો `\"region\": \"gujarat\"` રાખો.\n"
+            "- જો **ગુજરાતના જિલ્લા (જેમ કે મહેસાણા, બનાસકાંઠા, પાટણ)** પૂછ્યા હોય, તો `\"region\": \"gujarat\"`, `\"only_selected\": true` રાખો અને `\"pins\"` માં તે જિલ્લાના તમામ મુખ્ય **તાલુકા મથકો (`\"type\": \"taluka\"`)** અને **મુખ્ય ગામો (`\"type\": \"village\"`)** ના સચોટ અક્ષાંશ (`lat`) અને રેખાંશ (`lon`) ગુજરાતી નામ સાથે આપો!\n"
+            "- જો **ભારતના રાજ્યો** પૂછ્યા હોય, તો `\"region\": \"india\"` રાખો.\n"
             "- જો **વિશ્વ** પૂછ્યું હોય, તો `\"region\": \"world\"` રાખો.\n"
             "```map_json\n"
-            '{"region": "india", "only_selected": false, "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "ભારતનો રાજકીય નકશો", "show_rivers": false, "highlights": [{"place": "ગુજરાત", "label": "ગુજરાત", "color": "#FACC15"}, {"place": "રાજસ્થાન", "label": "રાજસ્થાન", "color": "#38BDF8"}, {"place": "દિલ્હી", "label": "દિલ્હી", "color": "#F472B6"}], "legend": [{"color": "#FACC15", "label": "ગુજરાત"}, {"color": "#38BDF8", "label": "રાજસ્થાન"}, {"color": "#F472B6", "label": "દિલ્હી"}]}\n'
-            "```\nઅને નીચે પ્રશ્નમાં પૂછેલા સ્થળોની મુદ્દાસર સમજૂતી આપો."
+            '{"region": "gujarat", "only_selected": true, "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો", "show_rivers": true, "highlights": [{"place": "મહેસાણા", "label": "મહેસાણા", "color": "#FEF08A"}], "pins": [{"name": "મહેસાણા", "lat": 23.588, "lon": 72.369, "type": "taluka"}, {"name": "પલાજ", "lat": 23.553, "lon": 72.426, "type": "village"}]}\n'
+            "```\nઅને નીચે પ્રશ્નમાં પૂછેલા તાલુકાઓ અને ગામોની મુદ્દાસર સમજૂતી ગુજરાતીમાં આપો."
         )
-    elif is_taluka_dual:
-        visual_instruction = "\n**મહત્વની સૂચના:** ઉપર રાજકીય (વહીવટી) અને ભૌગોલિક નકશો દર્શાવ્યો છે. નીચે તે તાલુકા/વિસ્તારની ભૌગોલિક અને વહીવટી માહિતી મુદ્દાસર ગુજરાતીમાં આપો."
     elif is_drawing_q:
         visual_instruction = "\n**મહત્વની સૂચના:** ઉપર પાઠ્યપુસ્તકની આકૃતિ આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash (`---`, `|||`) વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી અને કાર્ય ગુજરાતીમાં આપો."
 
