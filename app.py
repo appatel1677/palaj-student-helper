@@ -271,7 +271,7 @@ def build_pdf_bytes(messages):
         pdf.set_text_color(185, 28, 28) if is_user else pdf.set_text_color(15, 23, 42)
         pdf.cell(0, 7, ("વિદ્યાર્થી / શિક્ષક પ્રશ્ન:" if is_user else "સ્માર્ટ AI શિક્ષક જવાબ:"), ln=True)
 
-        vis_bytes = m.get("map_bytes") or m.get("image_bytes")
+        vis_bytes = m.get("graph_bytes") or m.get("map_bytes") or m.get("image_bytes")
         if not vis_bytes and m.get("math_svg"):
             vis_bytes = svg_to_png_bytes(m["math_svg"])
         if not vis_bytes and "<svg" in m.get("content", "").lower():
@@ -299,7 +299,7 @@ def build_pdf_bytes(messages):
         pdf.set_text_color(30, 41, 59)
         clean_txt = re.sub(r"```(?:svg|xml|html)?\s*<svg[\s\S]*?</svg>\s*```", "", m["content"], flags=re.IGNORECASE)
         clean_txt = re.sub(r"<svg[\s\S]*?</svg>", "", clean_txt, flags=re.IGNORECASE)
-        clean_txt = re.sub(r"```(?:map_json|village_map_json)[\s\S]*?```", "", clean_txt)
+        clean_txt = re.sub(r"```(?:map_json|graph_json|village_map_json)[\s\S]*?```", "", clean_txt)
         clean_txt = re.sub(r"<[^>]+>", "", clean_txt)
         clean_txt = clean_txt.replace("**", "").replace("###", "").replace("##", "").strip()
         if clean_txt:
@@ -329,6 +329,162 @@ def load_syllabus():
             return _SYLLABUS_CACHE
     _SYLLABUS_CACHE = {}
     return _SYLLABUS_CACHE
+
+# ==============================================================================
+# SCHOOL GRAPH PAPER & CHART ENGINE (LINE GRAPH, BAR GRAPH, PIE CHART, POINTS)
+# ==============================================================================
+def render_school_graph_png(spec):
+    if not HAS_MPL:
+        return None
+    font_path = get_pdf_font()
+    if font_path:
+        try:
+            font_manager.fontManager.addfont(font_path)
+            prop_name = font_manager.FontProperties(fname=font_path).get_name()
+            plt.rcParams["font.sans-serif"] = [prop_name, "DejaVu Sans"]
+            plt.rcParams["font.family"] = "sans-serif"
+            plt.rcParams["axes.unicode_minus"] = False
+        except Exception:
+            pass
+
+    fp_title = font_manager.FontProperties(fname=font_path, size=13.5, weight="bold") if font_path else None
+    fp_sub = font_manager.FontProperties(fname=font_path, size=10.5, weight="bold") if font_path else None
+    fp_lbl = font_manager.FontProperties(fname=font_path, size=9.2, weight="bold") if font_path else None
+    fp_small = font_manager.FontProperties(fname=font_path, size=8.2) if font_path else None
+
+    gtype = str(spec.get("type", "line")).lower()
+    title = str(spec.get("title", "ગણિત - આલેખ (Graph)")).strip()
+    x_label = str(spec.get("x_label", "X-અક્ષ")).strip()
+    y_label = str(spec.get("y_label", "Y-અક્ષ")).strip()
+    scale_text = str(spec.get("scale", "")).strip()
+    x_vals = spec.get("x") or []
+    y_vals = spec.get("y") or []
+
+    if not x_vals or not y_vals:
+        return None
+
+    fig = plt.figure(figsize=(10.5, 6.8), dpi=170)
+    fig.patch.set_facecolor("#F8FAFC")
+
+    ax = fig.add_axes([0.11, 0.14, 0.83, 0.72])
+    ax.set_facecolor("#F0FDF4")  # આછો ગ્રાફ પેપર લીલો રંગ
+
+    fig.text(0.52, 0.94, title, ha="center", va="center", color="#1E3A8A", fontproperties=fp_title)
+    if scale_text:
+        fig.text(0.52, 0.895, f"પ્રમાણમાપ: {scale_text}", ha="center", va="center", color="#B91C1C", fontproperties=fp_sub)
+
+    if gtype == "pie":
+        ax.clear()
+        ax.set_facecolor("#FFFFFF")
+        nums = [float(v) for v in y_vals]
+        labels = [str(v) for v in x_vals]
+        colors = ["#FDE047", "#38BDF8", "#F472B6", "#4ADE80", "#FB923C", "#A78BFA", "#2DD4BF"]
+        wedges, texts, autotexts = ax.pie(
+            nums, labels=labels, autopct="%1.1f%%", startangle=90,
+            colors=colors[:len(nums)], wedgeprops=dict(edgecolor="#1E293B", linewidth=1.2)
+        )
+        for t in texts:
+            if fp_lbl:
+                t.set_fontproperties(fp_lbl)
+        for at in autotexts:
+            at.set_fontsize(8.5)
+            at.set_fontweight("bold")
+        ax.axis("equal")
+
+    elif gtype == "bar":
+        labels = [str(v) for v in x_vals]
+        nums = [float(v) for v in y_vals]
+        bars = ax.bar(labels, nums, color="#3B82F6", edgecolor="#1E3A8A", linewidth=1.3, width=0.52, zorder=4)
+        ax.grid(True, which="major", axis="y", color="#86EFAC", linestyle="-", linewidth=1.0, zorder=1)
+        ax.minorticks_on()
+        ax.grid(True, which="minor", axis="y", color="#BBF7D0", linestyle=":", linewidth=0.7, zorder=1)
+        for bar, val in zip(bars, nums):
+            disp = int(val) if val == int(val) else round(val, 2)
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(nums) * 0.02, str(disp),
+                    ha="center", va="bottom", color="#0F172A", fontproperties=fp_lbl, zorder=5)
+        ax.set_ylim(0, max(nums) * 1.18 if max(nums) > 0 else 10)
+        for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+            if fp_small:
+                lbl.set_fontproperties(fp_small)
+
+    else:
+        # LINE GRAPH / SCATTER POINTS ON GRAPH PAPER
+        try:
+            xs = [float(v) for v in x_vals]
+            is_numeric_x = True
+        except Exception:
+            xs = list(range(len(x_vals)))
+            is_numeric_x = False
+
+        ys = [float(v) for v in y_vals]
+
+        ax.minorticks_on()
+        ax.grid(True, which="major", color="#22C55E", linestyle="-", linewidth=1.0, alpha=0.65, zorder=1)
+        ax.grid(True, which="minor", color="#86EFAC", linestyle="-", linewidth=0.55, alpha=0.55, zorder=1)
+
+        if gtype != "points":
+            ax.plot(xs, ys, color="#DC2626", linewidth=2.5, zorder=4)
+
+        ax.scatter(xs, ys, s=68, color="#1D4ED8", edgecolor="#FFFFFF", linewidth=1.3, zorder=5)
+
+        for idx_p, (px, py) in enumerate(zip(xs, ys)):
+            x_disp = int(px) if (is_numeric_x and px == int(px)) else (px if is_numeric_x else x_vals[idx_p])
+            y_disp = int(py) if py == int(py) else round(py, 2)
+            ax.annotate(
+                f"({x_disp}, {y_disp})",
+                (px, py),
+                textcoords="offset points",
+                xytext=(0, 9),
+                ha="center",
+                color="#0F172A",
+                fontproperties=fp_small,
+                bbox=dict(boxstyle="round,pad=0.15", facecolor="#FFFFFF", edgecolor="#94A3B8", alpha=0.88),
+                zorder=6
+            )
+
+        if not is_numeric_x:
+            ax.set_xticks(xs)
+            ax.set_xticklabels([str(v) for v in x_vals])
+
+        x_max = max(xs) if xs else 10
+        y_max = max(ys) if ys else 10
+        x_min = min(0, min(xs)) if is_numeric_x else -0.5
+        y_min = min(0, min(ys))
+        ax.set_xlim(x_min, x_max * 1.15 if x_max > 0 else 10)
+        ax.set_ylim(y_min, y_max * 1.18 if y_max > 0 else 10)
+
+        for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+            if fp_small:
+                lbl.set_fontproperties(fp_small)
+
+    if gtype != "pie":
+        ax.set_xlabel(x_label, color="#0F172A", fontproperties=fp_lbl, labelpad=8)
+        ax.set_ylabel(y_label, color="#0F172A", fontproperties=fp_lbl, labelpad=8)
+        for spine in ["bottom", "left"]:
+            ax.spines[spine].set_color("#0F172A")
+            ax.spines[spine].set_linewidth(1.8)
+        for spine in ["top", "right"]:
+            ax.spines[spine].set_color("#64748B")
+            ax.spines[spine].set_linewidth(1.0)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=170)
+    plt.close(fig)
+    return buf.getvalue()
+
+def extract_or_build_graph_bytes(content):
+    graph_img_bytes = None
+    clean_text = content
+    if "```graph_json" in clean_text:
+        m = re.search(r"```graph_json\s*([\s\S]*?)```", clean_text)
+        if m:
+            try:
+                spec = json.loads(m.group(1).strip())
+                graph_img_bytes = render_school_graph_png(spec)
+            except Exception:
+                pass
+        clean_text = re.sub(r"```graph_json[\s\S]*?```", "", clean_text)
+    return graph_img_bytes, clean_text
 
 # ==============================================================================
 # REAL GIS MAP ENGINE + DISTRICT TALUKA & VILLAGE PINS ENGINE
@@ -369,10 +525,8 @@ GUJ_DIST_KEYWORDS = {
     "તાપી": "તાપી", "tapi": "તાપી",
 }
 
-# મહેસાણા જિલ્લાના તમામ ૧૦ તાલુકા મથકો અને મુખ્ય ગામો (અસલી GPS અક્ષાંશ-રેખાંશ)
 DISTRICT_BUILTIN_PINS = {
     "મહેસાણા": [
-        # ૧૦ તાલુકા મથકો
         {"name": "મહેસાણા", "lon": 72.3693, "lat": 23.5880, "type": "taluka"},
         {"name": "વિસનગર", "lon": 72.5522, "lat": 23.6987, "type": "taluka"},
         {"name": "ઊંઝા", "lon": 72.3912, "lat": 23.8037, "type": "taluka"},
@@ -383,7 +537,6 @@ DISTRICT_BUILTIN_PINS = {
         {"name": "બેચરાજી", "lon": 72.0461, "lat": 23.5015, "type": "taluka"},
         {"name": "સતલાસણા", "lon": 72.7358, "lat": 24.0061, "type": "taluka"},
         {"name": "જોટાણા", "lon": 72.3168, "lat": 23.4756, "type": "taluka"},
-        # મુખ્ય ગામો (પલાજ સહિત)
         {"name": "પલાજ", "lon": 72.4265, "lat": 23.5535, "type": "village"},
         {"name": "મોઢેરા", "lon": 72.1332, "lat": 23.5835, "type": "village"},
         {"name": "તારંગા", "lon": 72.7562, "lat": 23.9631, "type": "village"},
@@ -493,17 +646,17 @@ def load_real_geojson(kind="gujarat"):
     if kind == "gujarat":
         local_path = "geo_cache/gujarat_real_districts.geojson"
         urls = [
-            "https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson",
-            "https://raw.githubusercontent.com/datameet/maps/master/Districts/Census_2011/2011_Dist.geojson",
+            "[https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson](https://raw.githubusercontent.com/geohacker/india/master/district/india_district.geojson)",
+            "[https://raw.githubusercontent.com/datameet/maps/master/Districts/Census_2011/2011_Dist.geojson](https://raw.githubusercontent.com/datameet/maps/master/Districts/Census_2011/2011_Dist.geojson)",
         ]
     elif kind == "world":
         local_path = "geo_cache/world_countries.geojson"
-        urls = ["https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json"]
+        urls = ["[https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json](https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json)"]
     else:
         local_path = "geo_cache/india_real_states.geojson"
         urls = [
-            "https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson",
-            "https://raw.githubusercontent.com/Subhash9325/GeoJson-Data-of-Indian-States/master/Indian_States",
+            "[https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson](https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson)",
+            "[https://raw.githubusercontent.com/Subhash9325/GeoJson-Data-of-Indian-States/master/Indian_States](https://raw.githubusercontent.com/Subhash9325/GeoJson-Data-of-Indian-States/master/Indian_States)",
         ]
 
     if os.path.exists(local_path):
@@ -555,7 +708,7 @@ def fetch_osm_real_boundary(place_query):
             pass
     try:
         q_enc = urllib.parse.quote(place_query)
-        url = f"https://nominatim.openstreetmap.org/search?q={q_enc}&format=geojson&polygon_geojson=1&limit=1"
+        url = f"[https://nominatim.openstreetmap.org/search?q=](https://nominatim.openstreetmap.org/search?q=){q_enc}&format=geojson&polygon_geojson=1&limit=1"
         req = urllib.request.Request(url, headers={"User-Agent": "PalajSmartSchoolTeacherApp/4.0 (education)"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -640,7 +793,6 @@ def render_textbook_map_png(spec, raw_query=""):
     q_low = (raw_query or "").lower()
     force_rivers = bool(spec.get("show_rivers", False)) or any(w in q_low for w in ("નદી", "nadi", "river", "નર્મદા", "તાપી", "સાબરમતી", "ગંગા", "ભૌગોલિક", "bhaugolik"))
 
-    # જિલ્લાની અંદરના તાલુકા મથકો અને ગામોના પિન્સ (Pins)
     pins_to_draw = []
     for d_name in mentioned_dists:
         if d_name in DISTRICT_BUILTIN_PINS:
@@ -780,7 +932,6 @@ def render_textbook_map_png(spec, raw_query=""):
                     map_ax.plot(xs, ys, color="#0284C7", linewidth=2.2, alpha=0.8)
                     map_ax.text(xs[1], ys[1] + 0.03, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_small)
 
-            # જિલ્લાની અંદરના તાલુકા મથકો અને ગામો દોરો
             if pins_to_draw:
                 for p in pins_to_draw:
                     px, py = p["lon"], p["lat"]
@@ -847,7 +998,7 @@ def render_textbook_map_png(spec, raw_query=""):
 def get_curated_textbook_svg(query_text):
     q = (query_text or "").lower()
     if any(w in q for w in ("કંઠસ્થાન", "કંઠસ્થન", "સ્વરપેટી", "larynx", "laryx", "larnyx", "vocal")):
-        return '''<svg width="740" height="450" viewBox="0 0 740 450" xmlns="http://www.w3.org/2000/svg">
+        return '''<svg width="740" height="450" viewBox="0 0 740 450" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)">
   <defs>
     <linearGradient id="skinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#DBEAFE"/>
@@ -864,85 +1015,26 @@ def get_curated_textbook_svg(query_text):
       <stop offset="100%" stop-color="#CBD5E1"/>
     </linearGradient>
   </defs>
-
   <rect width="740" height="450" rx="12" fill="#FFFFFF"/>
   <rect x="24" y="20" width="692" height="365" rx="6" fill="#F8FAFC" stroke="#475569" stroke-width="1.8"/>
-
-  <!-- LEFT PANEL: HUMAN HEAD/NECK PROFILE + HAND TOUCHING LARYNX -->
   <g transform="translate(45, 32)">
-    <path d="M 110,15 
-             C 175,10 220,38 225,75 
-             C 228,88 220,96 226,108 
-             C 234,122 238,130 226,136 
-             C 220,140 224,148 222,154 
-             C 220,160 225,166 220,174 
-             C 214,184 192,192 155,192 
-             C 128,192 118,205 118,232 
-             L 124,335 L 35,335 
-             C 22,275 18,195 30,120 
-             C 40,62 68,20 110,15 Z" 
-          fill="url(#skinGrad)" stroke="#1E3A8A" stroke-width="2.2"/>
-
+    <path d="M 110,15 C 175,10 220,38 225,75 C 228,88 220,96 226,108 C 234,122 238,130 226,136 C 220,140 224,148 222,154 C 220,160 225,166 220,174 C 214,184 192,192 155,192 C 128,192 118,205 118,232 L 124,335 L 35,335 C 22,275 18,195 30,120 C 40,62 68,20 110,15 Z" fill="url(#skinGrad)" stroke="#1E3A8A" stroke-width="2.2"/>
     <path d="M 65,330 L 92,225 C 96,208 112,204 114,220 L 92,330" fill="#60A5FA" stroke="#1E3A8A" stroke-width="1.8"/>
-    <line x1="87" y1="242" x2="107" y2="246" stroke="#1E3A8A" stroke-width="1.8"/>
-    <line x1="83" y1="258" x2="103" y2="262" stroke="#1E3A8A" stroke-width="1.8"/>
-    <line x1="79" y1="274" x2="99" y2="278" stroke="#1E3A8A" stroke-width="1.8"/>
-    <line x1="75" y1="290" x2="95" y2="294" stroke="#1E3A8A" stroke-width="1.8"/>
-    <line x1="71" y1="306" x2="91" y2="310" stroke="#1E3A8A" stroke-width="1.8"/>
-
     <ellipse cx="116" cy="216" rx="7" ry="12" fill="#3B82F6" stroke="#0F172A" stroke-width="1.8"/>
-
-    <path d="M 118,214 C 132,206 148,212 156,222 
-             C 178,228 205,245 202,272 
-             C 198,295 182,315 178,335 
-             L 112,335 
-             C 110,305 112,275 104,252 
-             C 98,236 104,220 118,214 Z" 
-          fill="url(#handGrad)" stroke="#1E293B" stroke-width="2"/>
-    <path d="M 105,232 C 118,226 134,230 142,240" fill="none" stroke="#1E293B" stroke-width="1.8"/>
-    <path d="M 135,236 C 148,248 146,272 136,288" fill="none" stroke="#1E293B" stroke-width="1.8"/>
-    <path d="M 152,226 C 166,238 168,262 160,280" fill="none" stroke="#1E293B" stroke-width="1.6"/>
-
+    <path d="M 118,214 C 132,206 148,212 156,222 C 178,228 205,245 202,272 C 198,295 182,315 178,335 L 112,335 C 110,305 112,275 104,252 C 98,236 104,220 118,214 Z" fill="url(#handGrad)" stroke="#1E293B" stroke-width="2"/>
     <circle cx="117" cy="215" r="3.5" fill="#DC2626"/>
     <line x1="120" y1="215" x2="215" y2="215" stroke="#0F172A" stroke-width="1.8"/>
     <text x="222" y="220" font-size="17" font-weight="bold" fill="#0F172A">સ્વરપેટી</text>
   </g>
-
-  <!-- RIGHT PANEL: ANATOMICAL LARYNX & VOCAL CORDS -->
   <g transform="translate(395, 55)">
-    <path d="M 35,45 
-             C 28,25 42,15 50,35 
-             C 56,55 62,82 88,88 
-             C 115,94 165,94 192,88 
-             C 218,82 224,55 230,35 
-             C 238,15 252,25 245,45 
-             C 238,75 248,125 242,165 
-             C 236,205 198,238 162,245 
-             C 148,248 142,240 140,235 
-             C 138,240 132,248 118,245 
-             C 82,238 44,205 38,165 
-             C 32,125 42,75 35,45 Z" 
-          fill="url(#cartilageGrad)" stroke="#1E3A8A" stroke-width="2.4"/>
-
-    <path d="M 88,88 C 102,55 178,55 192,88 C 175,102 105,102 88,88 Z" fill="#93C5FD" stroke="#1E3A8A" stroke-width="2"/>
-    <path d="M 102,84 C 118,72 162,72 178,84" fill="#1E293B" stroke="#0F172A" stroke-width="1.5"/>
-
-    <path d="M 85,112 C 95,98 185,98 195,112 C 202,145 182,195 140,212 C 98,195 78,145 85,112 Z" 
-          fill="#EFF6FF" stroke="#1E3A8A" stroke-width="2"/>
-
+    <path d="M 35,45 C 28,25 42,15 50,35 C 56,55 62,82 88,88 C 115,94 165,94 192,88 C 218,82 224,55 230,35 C 238,15 252,25 245,45 C 238,75 248,125 242,165 C 236,205 198,238 162,245 C 148,248 142,240 140,235 C 138,240 132,248 118,245 C 82,238 44,205 38,165 C 32,125 42,75 35,45 Z" fill="url(#cartilageGrad)" stroke="#1E3A8A" stroke-width="2.4"/>
+    <path d="M 85,112 C 95,98 185,98 195,112 C 202,145 182,195 140,212 C 98,195 78,145 85,112 Z" fill="#EFF6FF" stroke="#1E3A8A" stroke-width="2"/>
     <path d="M 136,112 C 112,135 112,175 138,205 L 138,112 Z" fill="#60A5FA" stroke="#0F172A" stroke-width="2"/>
     <path d="M 144,112 C 168,135 168,175 142,205 L 142,112 Z" fill="#60A5FA" stroke="#0F172A" stroke-width="2"/>
-    <line x1="140" y1="112" x2="140" y2="206" stroke="#0F172A" stroke-width="2.5"/>
-
     <line x1="65" y1="275" x2="124" y2="162" stroke="#0F172A" stroke-width="1.8"/>
-    <polygon points="124,162 115,168 122,173" fill="#0F172A"/>
-
     <line x1="65" y1="275" x2="154" y2="168" stroke="#0F172A" stroke-width="1.8"/>
-    <polygon points="154,168 145,172 151,178" fill="#0F172A"/>
-
     <text x="65" y="298" text-anchor="middle" font-size="17" font-weight="bold" fill="#0F172A">સ્વરતંતુઓ</text>
   </g>
-
   <text x="370" y="422" text-anchor="middle" font-size="18" font-weight="bold" fill="#0F172A">[આકૃતિ 10.1 : મનુષ્યમાં સ્વરપેટી (કંઠસ્થાન)]</text>
 </svg>'''
     return None
@@ -960,9 +1052,9 @@ async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=
         svg_prompt = (
             f"Create a detailed, realistic Indian NCERT / GCERT Class 3-8 Science textbook SVG diagram (width='740' height='450' viewBox='0 0 740 450') for: {query_text}.\n"
             "STRICT RULES:\n"
-            "1. Output ONLY raw <svg width='740' height='450' viewBox='0 0 740 450' xmlns='http://www.w3.org/2000/svg'>...</svg>.\n"
+            "1. Output ONLY raw <svg width='740' height='450' viewBox='0 0 740 450' xmlns='[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)'>...</svg>.\n"
             "2. White background <rect width='740' height='450' rx='12' fill='#FFFFFF'/> and inner border <rect x='24' y='20' width='692' height='365' rx='6' fill='#F8FAFC' stroke='#475569' stroke-width='1.8'/>.\n"
-            "3. Draw realistic anatomical/scientific curves using smooth cubic Bezier <path d='... C ...'> with <linearGradient> shading — NEVER draw crude boxes or plain circles.\n"
+            "3. Draw realistic anatomical/scientific curves using smooth cubic Bezier <path d='... C ...'> with <linearGradient> shading.\n"
             "4. Add pointer lines with arrowheads and clear Gujarati part labels (font-size='16' font-weight='bold' fill='#0F172A') strictly inside x=45..690, y=45..370.\n"
             "5. Put the textbook caption at the bottom: <text x='370' y='422' text-anchor='middle' font-size='18' font-weight='bold' fill='#0F172A'>[આકૃતિ : ...]</text>."
         )
@@ -983,12 +1075,12 @@ async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=
 def build_math_fraction_svg(query_text):
     q = (query_text or "").translate(str.maketrans("૦૧૨૩૪૫૬૭૮૯", "0123456789")).lower()
     if "ત્રિકોણ" in q or "triangle" in q or "trikon" in q:
-        return '<svg width="520" height="290" viewBox="0 0 520 290" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="290" rx="12" fill="#FFFFFF"/><text x="260" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#1E3A8A">📐 ત્રિકોણની આકૃતિ અને તેના અંગો</text><polygon points="260,60 130,235 390,235" fill="#DBEAFE" stroke="#1D4ED8" stroke-width="3"/><text x="260" y="48" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ A</text><text x="105" y="258" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ B</text><text x="415" y="258" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ C</text><text x="260" y="258" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F172A">પાયો BC (૩ બાજુ, ૩ ખૂણા)</text></svg>'
+        return '<svg width="520" height="290" viewBox="0 0 520 290" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"><rect width="520" height="290" rx="12" fill="#FFFFFF"/><text x="260" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#1E3A8A">📐 ત્રિકોણની આકૃતિ અને તેના અંગો</text><polygon points="260,60 130,235 390,235" fill="#DBEAFE" stroke="#1D4ED8" stroke-width="3"/><text x="260" y="48" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ A</text><text x="105" y="258" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ B</text><text x="415" y="258" text-anchor="middle" font-size="14" font-weight="bold" fill="#DC2626">શિરોબિંદુ C</text><text x="260" y="258" text-anchor="middle" font-size="13" font-weight="bold" fill="#0F172A">પાયો BC (૩ બાજુ, ૩ ખૂણા)</text></svg>'
     if "ચોરસ" in q or "લંબચોરસ" in q or "square" in q or "rectangle" in q or "choras" in q:
         is_rect = "લંબચોરસ" in q or "rectangle" in q
         w = 240 if is_rect else 160
         x0 = 260 - w // 2
-        return f'<svg width="520" height="290" viewBox="0 0 520 290" xmlns="http://www.w3.org/2000/svg"><rect width="520" height="290" rx="12" fill="#FFFFFF"/><text x="260" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#1E3A8A">📐 {"લંબચોરસ" if is_rect else "ચોરસ"} ની આકૃતિ</text><rect x="{x0}" y="68" width="{w}" height="155" fill="#DCFCE7" stroke="#15803D" stroke-width="3"/><text x="260" y="255" text-anchor="middle" font-size="13" font-weight="bold" fill="#15803D">દરેક ખૂણો ૯૦° (કાટખૂણો)</text></svg>'
+        return f'<svg width="520" height="290" viewBox="0 0 520 290" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"><rect width="520" height="290" rx="12" fill="#FFFFFF"/><text x="260" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#1E3A8A">📐 {"લંબચોરસ" if is_rect else "ચોરસ"} ની આકૃતિ</text><rect x="{x0}" y="68" width="{w}" height="155" fill="#DCFCE7" stroke="#15803D" stroke-width="3"/><text x="260" y="255" text-anchor="middle" font-size="13" font-weight="bold" fill="#15803D">દરેક ખૂણો ૯૦° (કાટખૂણો)</text></svg>'
     return None
 
 # --- DETECTION HELPERS ---
@@ -996,7 +1088,7 @@ _GUJ_DIGIT_MAP = str.maketrans("૦૧૨૩૪૫૬૭૮૯", "0123456789")
 _SUBJECT_LABELS = {"gujarati": "ગુજરાતી", "sanskrit": "સંસ્કૃત", "math": "ગણિત", "science": "વિજ્ઞાન", "social_science": "સામાજિક વિજ્ઞાન", "environment": "પર્યાવરણ", "english": "અંગ્રેજી", "hindi": "હિન્દી"}
 _EXPLICIT_SUBJECTS = {
     "social_science": ["સામાજિક વિજ્ઞાન", "સામાજિક", "social", "ઇતિહાસ", "ભૂગોળ", "નકશો", "નક્શો", "નકશા", "નકશાપૂર્તિ", "naksho", "naksha", "જિલ્લા", "તાલુકા", "ગુજરાત", "મગધ", "કિલ્લો", "કિલ્લા", "પ્રદેશ", "ઉદ્યોગ", "ખેત ઉત્પાદન", "પાક"],
-    "math": ["ગણિત", "math", "ભૂમિતિ", "અપૂર્ણાંક", "વર્તુળ", "ત્રિકોણ", "ચોરસ"],
+    "math": ["ગણિત", "math", "ભૂમિતિ", "અપૂર્ણાંક", "વર્તુળ", "ત્રિકોણ", "ચોરસ", "આલેખ", "alekh", "graph", "chart", "સ્તંભ", "રેખીય"],
     "science": ["વિજ્ઞાન", "science", "પ્રકાશસંશ્લેષણ", "કોષ", "વિદ્યુત", "ચુંબક"],
     "environment": ["પર્યાવરણ", "આસપાસ", "evs"],
     "gujarati": ["ગુજરાતી", "gujarati", "કલશોર", "કેકારવ", "કુહૂ", "પલાશ"],
@@ -1004,6 +1096,14 @@ _EXPLICIT_SUBJECTS = {
     "english": ["અંગ્રેજી", "english"],
     "hindi": ["હિન્દી", "hindi"],
 }
+
+def wants_graph(text):
+    t = (text or "").lower()
+    return any(kw in t for kw in (
+        "આલેખ", "alekh", "aalekh", "graph", "chart", "plot",
+        "રેખીય", "સ્તંભ", "પાય ચાર્ટ", "pie chart", "bar graph", "line graph",
+        "યામ", "બિંદુઓ દર્શાવો", "x-અક્ષ", "y-અક્ષ", "પ્રમાણમાપ"
+    ))
 
 def wants_map(text):
     t = (text or "").lower()
@@ -1221,7 +1321,7 @@ async def on_message(message: cl.Message):
     if not clean_q and not elements:
         return
     if not clean_q:
-        clean_q = "[કેમેરા / ફાઈલ સંલગ્ન છે]"
+        clean_q = "[કેમેરા / ફાઈલ સંલગ્ન છે — તેમાં રહેલા દાખલા / આલેખ / પ્રશ્નનો સંપૂર્ણ ઉકેલ આપો]"
     await process_teacher_query(clean_q, elements)
 
 async def process_teacher_query(clean_q: str, elements: list):
@@ -1255,9 +1355,11 @@ async def process_teacher_query(clean_q: str, elements: list):
 
     syllabus_data = load_syllabus()
     grade, subject, local_pdf_paths = resolve_grade_subject_and_pdfs(clean_q, syllabus_data)
-    is_map_q = wants_map(clean_q)
-    math_svg_code = build_math_fraction_svg(clean_q) if not is_map_q else None
-    is_drawing_q = wants_any_drawing_or_diagram(clean_q) and not is_map_q and not math_svg_code
+    has_image_att = len(user_att_parts) > 0
+    is_graph_q = wants_graph(clean_q) or has_image_att
+    is_map_q = wants_map(clean_q) and not wants_graph(clean_q)
+    math_svg_code = build_math_fraction_svg(clean_q) if (not is_map_q and not wants_graph(clean_q)) else None
+    is_drawing_q = wants_any_drawing_or_diagram(clean_q) and not is_map_q and not math_svg_code and not wants_graph(clean_q)
 
     recent_hist = "\n".join(f"{'વિદ્યાર્થી' if m['role']=='user' else 'શિક્ષક'}: {m['content']}" for m in messages[:-1][-3:])
     book_page_parts = await asyncio.to_thread(build_vision_pdf_parts, local_pdf_paths[0]) if (local_pdf_paths and needs_textbook_vision(clean_q)) else []
@@ -1267,18 +1369,23 @@ async def process_teacher_query(clean_q: str, elements: list):
         img_task = asyncio.create_task(generate_clean_drawing_async(clean_q, api_keys, is_infographic_map=False))
 
     visual_instruction = ""
+    if is_graph_q:
+        visual_instruction += (
+            "\n**આલેખ (GRAPH) માટેની મહત્વની સૂચના:** જો પ્રશ્નમાં કે મોકલેલા ફોટોમાં કોઈ **આલેખ (રેખીય આલેખ, સ્તંભ આલેખ, પાય ચાર્ટ, કે બિંદુઓ દર્શાવવાનો દાખલો)** હોય, તો જવાબની શરૂઆતમાં નીચે મુજબનો ```graph_json બ્લોક ફરજિયાત આપો (બધી સંખ્યા અંગ્રેજી અંકોમાં `1, 2, 5, 10` રાખો અને લેબલ ગુજરાતીમાં રાખો):\n"
+            "```graph_json\n"
+            '{"type": "line", "title": "સફરજનની સંખ્યા અને કિંમતનો રેખીય આલેખ", "x_label": "સફરજનની સંખ્યા", "y_label": "કિંમત (રૂપિયામાં)", "scale": "X-અક્ષ: 1 એકમ = 1 સફરજન | Y-અક્ષ: 1 એકમ = 5 રૂપિયા", "x": [1, 2, 3, 4, 5], "y": [5, 10, 15, 20, 25]}\n'
+            "```\n"
+            "(`type` માટે `\"line\"`, `\"bar\"`, `\"pie\"`, અથવા `\"points\"` વાપરો). અને તેની નીચે દાખલાના બધા પેટાપ્રશ્નોના સ્ટેપ-બાય-સ્ટેપ જવાબ શુદ્ધ ગુજરાતીમાં આપો."
+        )
     if is_map_q:
-        visual_instruction = (
-            "\n**મહત્વની સૂચના:** પ્રશ્ન મુજબ સાચો ```map_json બ્લોક ફરજિયાત આપો:\n"
-            "- જો **ગુજરાતના જિલ્લા (જેમ કે મહેસાણા, બનાસકાંઠા, પાટણ)** પૂછ્યા હોય, તો `\"region\": \"gujarat\"`, `\"only_selected\": true` રાખો અને `\"pins\"` માં તે જિલ્લાના તમામ મુખ્ય **તાલુકા મથકો (`\"type\": \"taluka\"`)** અને **મુખ્ય ગામો (`\"type\": \"village\"`)** ના સચોટ અક્ષાંશ (`lat`) અને રેખાંશ (`lon`) ગુજરાતી નામ સાથે આપો!\n"
-            "- જો **ભારતના રાજ્યો** પૂછ્યા હોય, તો `\"region\": \"india\"` રાખો.\n"
-            "- જો **વિશ્વ** પૂછ્યું હોય, તો `\"region\": \"world\"` રાખો.\n"
+        visual_instruction += (
+            "\n**નકશા (MAP) માટેની સૂચના:** પ્રશ્ન મુજબ સાચો ```map_json બ્લોક ફરજિયાત આપો:\n"
             "```map_json\n"
             '{"region": "gujarat", "only_selected": true, "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો", "show_rivers": true, "highlights": [{"place": "મહેસાણા", "label": "મહેસાણા", "color": "#FEF08A"}], "pins": [{"name": "મહેસાણા", "lat": 23.588, "lon": 72.369, "type": "taluka"}, {"name": "પલાજ", "lat": 23.553, "lon": 72.426, "type": "village"}]}\n'
-            "```\nઅને નીચે પ્રશ્નમાં પૂછેલા તાલુકાઓ અને ગામોની મુદ્દાસર સમજૂતી ગુજરાતીમાં આપો."
+            "```"
         )
     elif is_drawing_q:
-        visual_instruction = "\n**મહત્વની સૂચના:** ઉપર પાઠ્યપુસ્તકની આકૃતિ આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash (`---`, `|||`) વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી અને કાર્ય ગુજરાતીમાં આપો."
+        visual_instruction += "\n**આકૃતિ માટેની સૂચના:** ઉપર પાઠ્યપુસ્તકની આકૃતિ આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી અને કાર્ય ગુજરાતીમાં આપો."
 
     sys_prompt = f"તમે ધોરણ 3 થી 8 ના વિદ્યાર્થીઓ અને શિક્ષકો માટેના ઝડપી અને નિષ્ણાત AI સહાયક છો. જવાબ શુદ્ધ ગુજરાતીમાં, ત્વરિત અને મુદ્દાસર આપો.{visual_instruction}"
     prompt_text = f"{sys_prompt}\n\n{recent_hist}\nપ્રશ્ન: {clean_q}"
@@ -1300,7 +1407,7 @@ async def process_teacher_query(clean_q: str, elements: list):
                 async for chunk in stream:
                     if chunk.text:
                         temp += chunk.text
-                        if "```map_json" not in temp and "<svg" not in temp.lower():
+                        if "```map_json" not in temp and "```graph_json" not in temp and "<svg" not in temp.lower():
                             await msg.stream_token(chunk.text)
                 if temp.strip():
                     answer_text, success = temp, True
@@ -1321,16 +1428,20 @@ async def process_teacher_query(clean_q: str, elements: list):
     generated_svg_code = raw_drawing[1] if (isinstance(raw_drawing, tuple) and raw_drawing[0] == "svg") else None
     generated_img_bytes = raw_drawing[1] if (isinstance(raw_drawing, tuple) and raw_drawing[0] == "png") else (raw_drawing if isinstance(raw_drawing, bytes) else None)
 
-    computed_map_bytes, clean_text = (None, answer_text)
-    if is_map_q and not generated_img_bytes and not generated_svg_code:
+    computed_graph_bytes, clean_text = await asyncio.to_thread(extract_or_build_graph_bytes, answer_text)
+
+    computed_map_bytes = None
+    if is_map_q and not computed_graph_bytes and not generated_img_bytes and not generated_svg_code:
         computed_map_bytes, clean_text = await asyncio.to_thread(
-            extract_or_build_map_bytes, answer_text, True, clean_q
+            extract_or_build_map_bytes, clean_text, True, clean_q
         )
     else:
-        clean_text = re.sub(r"```map_json[\s\S]*?```", "", answer_text)
+        clean_text = re.sub(r"```map_json[\s\S]*?```", "", clean_text)
 
     msg_elements = []
-    if generated_svg_code:
+    if computed_graph_bytes:
+        msg_elements.append(cl.Image(name="palaj_graph.png", content=computed_graph_bytes, display="inline"))
+    elif generated_svg_code:
         msg_elements.append(make_svg_or_png_element(generated_svg_code, "palaj_diagram"))
     elif generated_img_bytes or computed_map_bytes:
         msg_elements.append(cl.Image(name="palaj_visual.png", content=(generated_img_bytes or computed_map_bytes), display="inline"))
@@ -1338,7 +1449,9 @@ async def process_teacher_query(clean_q: str, elements: list):
         msg_elements.append(make_svg_or_png_element(math_svg_code, "math_diagram"))
 
     badge = ""
-    if is_map_q:
+    if computed_graph_bytes:
+        badge = "📊 *ગ્રાફ પેપર પર દોરેલો સચોટ આલેખ (Graph)*\n\n"
+    elif is_map_q:
         badge = "🗺️ *પાઠ્યપુસ્તક શૈલીનો રાજકીય અને ભૌગોલિક નકશો*\n\n"
     elif grade and subject and local_pdf_paths:
         badge = f"📖 *ધોરણ {grade} | {_SUBJECT_LABELS.get(subject, subject)}*\n\n"
@@ -1351,6 +1464,7 @@ async def process_teacher_query(clean_q: str, elements: list):
     messages.append({
         "role": "assistant",
         "content": answer_text,
+        "graph_bytes": computed_graph_bytes,
         "map_bytes": computed_map_bytes,
         "image_bytes": generated_img_bytes,
         "math_svg": generated_svg_code or math_svg_code,
