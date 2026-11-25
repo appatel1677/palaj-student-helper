@@ -153,7 +153,6 @@ ACTIVE_MODELS = [
     "gemini-2.5-flash-lite",
 ]
 
-# Nano Banana (Gemini Native Image Generation)
 NANO_BANANA_MODELS = [
     "gemini-2.5-flash-image",
     "gemini-2.0-flash-exp-image-generation",
@@ -332,7 +331,7 @@ def load_syllabus():
     return _SYLLABUS_CACHE
 
 # ==============================================================================
-# 1. SCHOOL GRAPH PAPER & CHART ENGINE (LINE GRAPH, BAR GRAPH, PIE CHART, POINTS)
+# 1. SCHOOL GRAPH PAPER & CHART ENGINE
 # ==============================================================================
 def render_school_graph_png(spec):
     if not HAS_MPL:
@@ -487,42 +486,76 @@ def extract_or_build_graph_bytes(content):
     return graph_img_bytes, clean_text
 
 # ==============================================================================
-# 2. REAL GIS MAP ENGINE + OFFLINE FALLBACK BOUNDARIES + TALUKA & VILLAGE PINS
+# 2. REAL GIS MAP ENGINE + OSM DISTRICT BOUNDARIES + AUTO YELLOW POLYGON
 # ==============================================================================
 GUJ_DIST_KEYWORDS = {
-    "મહેસાણા": "મહેસાણા", "mahesana": "મહેસાણા", "mehsana": "મહેસાણા",
-    "બનાસકાંઠા": "બનાસકાંઠા", "banaskantha": "બનાસકાંઠા", "banas kantha": "બનાસકાંઠા",
-    "પાટણ": "પાટણ", "patan": "પાટણ",
-    "કચ્છ": "કચ્છ", "kutch": "કચ્છ", "kachchh": "કચ્છ",
-    "સાબરકાંઠા": "સાબરકાંઠા", "sabarkantha": "સાબરકાંઠા",
-    "અરવલ્લી": "અરવલ્લી", "aravalli": "અરવલ્લી",
-    "ગાંધીનગર": "ગાંધીનગર", "gandhinagar": "ગાંધીનગર",
-    "અમદાવાદ": "અમદાવાદ", "ahmedabad": "અમદાવાદ",
-    "ખેડા": "ખેડા", "kheda": "ખેડા",
-    "આણંદ": "આણંદ", "anand": "આણંદ",
-    "વડોદરા": "વડોદરા", "vadodara": "વડોદરા",
-    "સુરત": "સુરત", "surat": "સુરત",
-    "ભરૂચ": "ભરૂચ", "bharuch": "ભરૂચ",
-    "નર્મદા": "નર્મદા", "narmada": "નર્મદા",
-    "વલસાડ": "વલસાડ", "valsad": "વલસાડ",
-    "નવસારી": "નવસારી", "navsari": "નવસારી",
-    "ડાંગ": "ડાંગ", "dang": "ડાંગ",
-    "રાજકોટ": "રાજકોટ", "rajkot": "રાજકોટ",
-    "જામનગર": "જામનગર", "jamnagar": "જામનગર",
-    "જૂનાગઢ": "જૂનાગઢ", "junagadh": "જૂનાગઢ",
-    "ભાવનગર": "ભાવનગર", "bhavnagar": "ભાવનગર",
-    "અમરેલી": "અમરેલી", "amreli": "અમરેલી",
-    "મોરબી": "મોરબી", "morbi": "મોરબી",
-    "સુરેન્દ્રનગર": "સુરેન્દ્રનગર", "surendranagar": "સુરેન્દ્રનગર",
-    "પોરબંદર": "પોરબંદર", "porbandar": "પોરબંદર",
-    "ગીર સોમનાથ": "ગીર સોમનાથ", "gir somnath": "ગીર સોમનાથ",
-    "દેવભૂમિ દ્વારકા": "દેવભૂમિ દ્વારકા", "dwarka": "દેવભૂમિ દ્વારકા",
-    "બોટાદ": "બોટાદ", "botad": "બોટાદ",
-    "મહીસાગર": "મહીસાગર", "mahisagar": "મહીસાગર",
-    "પંચમહાલ": "પંચમહાલ", "panchmahal": "પંચમહાલ",
-    "દાહોદ": "દાહોદ", "dahod": "દાહોદ",
-    "છોટા ઉદેપુર": "છોટા ઉદેપુર", "chhota udaipur": "છોટા ઉદેપુર",
-    "તાપી": "તાપી", "tapi": "તાપી",
+    "મહેસાણા": ("મહેસાણા", "Mehsana, Gujarat, India"),
+    "mahesana": ("મહેસાણા", "Mehsana, Gujarat, India"),
+    "mehsana": ("મહેસાણા", "Mehsana, Gujarat, India"),
+    "બનાસકાંઠા": ("બનાસકાંઠા", "Banaskantha, Gujarat, India"),
+    "banaskantha": ("બનાસકાંઠા", "Banaskantha, Gujarat, India"),
+    "પાટણ": ("પાટણ", "Patan district, Gujarat, India"),
+    "patan": ("પાટણ", "Patan district, Gujarat, India"),
+    "કચ્છ": ("કચ્છ", "Kutch, Gujarat, India"),
+    "kutch": ("કચ્છ", "Kutch, Gujarat, India"),
+    "સાબરકાંઠા": ("સાબરકાંઠા", "Sabarkantha, Gujarat, India"),
+    "sabarkantha": ("સાબરકાંઠા", "Sabarkantha, Gujarat, India"),
+    "અરવલ્લી": ("અરવલ્લી", "Aravalli, Gujarat, India"),
+    "aravalli": ("અરવલ્લી", "Aravalli, Gujarat, India"),
+    "ગાંધીનગર": ("ગાંધીનગર", "Gandhinagar district, Gujarat, India"),
+    "gandhinagar": ("ગાંધીનગર", "Gandhinagar district, Gujarat, India"),
+    "અમદાવાદ": ("અમદાવાદ", "Ahmedabad district, Gujarat, India"),
+    "ahmedabad": ("અમદાવાદ", "Ahmedabad district, Gujarat, India"),
+    "ખેડા": ("ખેડા", "Kheda, Gujarat, India"),
+    "kheda": ("ખેડા", "Kheda, Gujarat, India"),
+    "આણંદ": ("આણંદ", "Anand district, Gujarat, India"),
+    "anand": ("આણંદ", "Anand district, Gujarat, India"),
+    "વડોદરા": ("વડોદરા", "Vadodara district, Gujarat, India"),
+    "vadodara": ("વડોદરા", "Vadodara district, Gujarat, India"),
+    "સુરત": ("સુરત", "Surat district, Gujarat, India"),
+    "surat": ("સુરત", "Surat district, Gujarat, India"),
+    "ભરૂચ": ("ભરૂચ", "Bharuch district, Gujarat, India"),
+    "bharuch": ("ભરૂચ", "Bharuch district, Gujarat, India"),
+    "નર્મદા": ("નર્મદા", "Narmada district, Gujarat, India"),
+    "narmada": ("નર્મદા", "Narmada district, Gujarat, India"),
+    "વલસાડ": ("વલસાડ", "Valsad district, Gujarat, India"),
+    "valsad": ("વલસાડ", "Valsad district, Gujarat, India"),
+    "નવસારી": ("નવસારી", "Navsari district, Gujarat, India"),
+    "navsari": ("નવસારી", "Navsari district, Gujarat, India"),
+    "ડાંગ": ("ડાંગ", "Dang, Gujarat, India"),
+    "dang": ("ડાંગ", "Dang, Gujarat, India"),
+    "રાજકોટ": ("રાજકોટ", "Rajkot district, Gujarat, India"),
+    "rajkot": ("રાજકોટ", "Rajkot district, Gujarat, India"),
+    "જામનગર": ("જામનગર", "Jamnagar district, Gujarat, India"),
+    "jamnagar": ("જામનગર", "Jamnagar district, Gujarat, India"),
+    "જૂનાગઢ": ("જૂનાગઢ", "Junagadh district, Gujarat, India"),
+    "junagadh": ("જૂનાગઢ", "Junagadh district, Gujarat, India"),
+    "ભાવનગર": ("ભાવનગર", "Bhavnagar district, Gujarat, India"),
+    "bhavnagar": ("ભાવનગર", "Bhavnagar district, Gujarat, India"),
+    "અમરેલી": ("અમરેલી", "Amreli district, Gujarat, India"),
+    "amreli": ("અમરેલી", "Amreli district, Gujarat, India"),
+    "મોરબી": ("મોરબી", "Morbi district, Gujarat, India"),
+    "morbi": ("મોરબી", "Morbi district, Gujarat, India"),
+    "સુરેન્દ્રનગર": ("સુરેન્દ્રનગર", "Surendranagar district, Gujarat, India"),
+    "surendranagar": ("સુરેન્દ્રનગર", "Surendranagar district, Gujarat, India"),
+    "પોરબંદર": ("પોરબંદર", "Porbandar district, Gujarat, India"),
+    "porbandar": ("પોરબંદર", "Porbandar district, Gujarat, India"),
+    "ગીર સોમનાથ": ("ગીર સોમનાથ", "Gir Somnath, Gujarat, India"),
+    "gir somnath": ("ગીર સોમનાથ", "Gir Somnath, Gujarat, India"),
+    "દેવભૂમિ દ્વારકા": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka, Gujarat, India"),
+    "dwarka": ("દેવભૂમિ દ્વારકા", "Devbhoomi Dwarka, Gujarat, India"),
+    "બોટાદ": ("બોટાદ", "Botad district, Gujarat, India"),
+    "botad": ("બોટાદ", "Botad district, Gujarat, India"),
+    "મહીસાગર": ("મહીસાગર", "Mahisagar, Gujarat, India"),
+    "mahisagar": ("મહીસાગર", "Mahisagar, Gujarat, India"),
+    "પંચમહાલ": ("પંચમહાલ", "Panchmahal, Gujarat, India"),
+    "panchmahal": ("પંચમહાલ", "Panchmahal, Gujarat, India"),
+    "દાહોદ": ("દાહોદ", "Dahod district, Gujarat, India"),
+    "dahod": ("દાહોદ", "Dahod district, Gujarat, India"),
+    "છોટા ઉદેપુર": ("છોટા ઉદેપુર", "Chhota Udaipur, Gujarat, India"),
+    "chhota udaipur": ("છોટા ઉદેપુર", "Chhota Udaipur, Gujarat, India"),
+    "તાપી": ("તાપી", "Tapi, Gujarat, India"),
+    "tapi": ("તાપી", "Tapi, Gujarat, India"),
 }
 
 DISTRICT_BUILTIN_PINS = {
@@ -549,26 +582,85 @@ DISTRICT_BUILTIN_PINS = {
         {"name": "સુંઢિયા", "lon": 72.5780, "lat": 23.8210, "type": "village"},
         {"name": "કુકસ", "lon": 72.4150, "lat": 23.6350, "type": "village"},
         {"name": "લડાલ", "lon": 72.6850, "lat": 23.6320, "type": "village"},
+    ],
+    "પાટણ": [
+        {"name": "પાટણ", "lon": 72.1266, "lat": 23.8493, "type": "taluka"},
+        {"name": "સિદ્ધપુર", "lon": 72.3736, "lat": 23.9182, "type": "taluka"},
+        {"name": "ચાણસ્મા", "lon": 72.1211, "lat": 23.7192, "type": "taluka"},
+        {"name": "હારિજ", "lon": 71.8981, "lat": 23.6942, "type": "taluka"},
+        {"name": "સમી", "lon": 71.7891, "lat": 23.6881, "type": "taluka"},
+        {"name": "રાધનપુર", "lon": 71.6067, "lat": 23.8315, "type": "taluka"},
+        {"name": "સાંતલપુર", "lon": 71.1892, "lat": 23.7765, "type": "taluka"},
+        {"name": "સરસ્વતી", "lon": 72.0750, "lat": 23.8850, "type": "taluka"},
+        {"name": "શંખેશ્વર", "lon": 71.7850, "lat": 23.5150, "type": "taluka"},
+        {"name": "રાણીની વાવ", "lon": 72.1018, "lat": 23.8589, "type": "village"},
+        {"name": "વરણા", "lon": 72.1550, "lat": 23.9050, "type": "village"},
+        {"name": "ખાનપુર", "lon": 72.0550, "lat": 23.7950, "type": "village"},
     ]
 }
 
-# ઓફલાઈન બેકઅપ સરહદ (જો Render પર GeoJSON ડાઉનલોડ ફેલ થાય તો પણ નકશો ખાલી ન રહે!)
 OFFLINE_DISTRICT_POLYGONS = {
     "મહેસાણા": [
         [71.95, 23.45], [72.02, 23.62], [72.22, 23.68], [72.32, 23.85],
         [72.52, 23.95], [72.72, 24.08], [72.83, 23.96], [72.78, 23.78],
         [72.82, 23.54], [72.66, 23.44], [72.48, 23.36], [72.38, 23.21],
         [72.22, 23.25], [72.18, 23.40], [71.95, 23.45]
+    ],
+    "પાટણ": [
+        [71.08, 23.72], [71.25, 23.95], [71.65, 23.98], [72.02, 23.98],
+        [72.35, 24.02], [72.46, 23.88], [72.25, 23.75], [72.18, 23.64],
+        [71.92, 23.45], [71.68, 23.48], [71.52, 23.65], [71.15, 23.62], [71.08, 23.72]
     ]
 }
+
+def _build_convex_hull_polygon(points, pad=0.08):
+    """જો કોઈ જિલ્લાનો નકશો ઓફલાઈન હોય, તો તેના તાલુકા/ગામોના બિંદુઓ પરથી પીળો જિલ્લા આકાર (Hull) બનાવે છે."""
+    pts = sorted(set((round(p[0], 4), round(p[1], 4)) for p in points))
+    if len(pts) < 3:
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        return [
+            [cx - 0.18, cy - 0.12], [cx + 0.18, cy - 0.12],
+            [cx + 0.22, cy + 0.04], [cx + 0.12, cy + 0.15],
+            [cx - 0.14, cy + 0.14], [cx - 0.20, cy + 0.02], [cx - 0.18, cy - 0.12]
+        ]
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    hull = lower[:-1] + upper[:-1]
+    cx = sum(p[0] for p in hull) / len(hull)
+    cy = sum(p[1] for p in hull) / len(hull)
+    padded = []
+    for hx, hy in hull:
+        ang = math.atan2(hy - cy, hx - cx)
+        padded.append([hx + math.cos(ang) * pad, hy + math.sin(ang) * pad])
+    padded.append(padded[0])
+    return padded
 
 def extract_mentioned_districts(query_text):
     q = (query_text or "").lower()
     found = []
-    for kw, guj_d in GUJ_DIST_KEYWORDS.items():
+    for kw, (guj_d, _en_q) in GUJ_DIST_KEYWORDS.items():
         if kw in q and guj_d not in found:
             found.append(guj_d)
     return found
+
+def get_osm_en_for_guj_dist(guj_dist):
+    for _kw, (gd, en_q) in GUJ_DIST_KEYWORDS.items():
+        if gd == guj_dist:
+            return en_q
+    return f"{guj_dist}, Gujarat, India"
 
 DISTRICT_EN_TO_GUJ = {
     "kachchh": ("કચ્છ", "kutch"), "kutch": ("કચ્છ", "kutch"),
@@ -933,15 +1025,34 @@ def render_textbook_map_png(spec, raw_query=""):
                     cx, cy = _polygon_centroid(biggest)
                     map_ax.text(cx, cy, guj_name, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl if (only_selected or matched_hl) else fp_small)
 
-        # ઓફલાઈન ફોલબેક: જો GeoJSON ફેલ થાય તો બિલ્ટ-ઇન જિલ્લા સરહદ દોરો (ક્યારેય ખાલી બોક્સ નહીં આવે!)
+        # ઓફલાઈન / OSM ફોલબેક 1: OSM પરથી અસલી જિલ્લા સરહદ લાવો
         if not all_x:
-            for d_name in (mentioned_dists or list(hl_map.keys())):
-                if d_name in OFFLINE_DISTRICT_POLYGONS:
+            target_dists = mentioned_dists or list(hl_map.keys())
+            for idx_td, d_name in enumerate(target_dists):
+                col = HIGHLIGHT_COLORS[idx_td % len(HIGHLIGHT_COLORS)]
+                osm_d = fetch_osm_real_boundary(get_osm_en_for_guj_dist(d_name))
+                if osm_d and osm_d.get("features"):
+                    polys = _extract_polygons_from_geom(osm_d["features"][0].get("geometry") or {})
+                    for poly in polys:
+                        map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=col, edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
+                        for px, py in poly:
+                            all_x.append(px)
+                            all_y.append(py)
+                # ઓફલાઈન ફોલબેક 2: બિલ્ટ-ઇન જિલ્લા સરહદ
+                if not all_x and d_name in OFFLINE_DISTRICT_POLYGONS:
                     poly = OFFLINE_DISTRICT_POLYGONS[d_name]
-                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor="#FEF08A", edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
+                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor=col, edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
                     for px, py in poly:
                         all_x.append(px)
                         all_y.append(py)
+
+        # ઓફલાઈન ફોલબેક 3: જો કોઈપણ નવા જિલ્લાના પિન્સ (તાલુકા/ગામ) મળ્યા હોય તો તેની ફરતે પીળો નકશો (Polygon) બનાવો!
+        if not all_x and pins_to_draw:
+            hull_poly = _build_convex_hull_polygon([(p["lon"], p["lat"]) for p in pins_to_draw], pad=0.09)
+            map_ax.add_patch(patches.Polygon(hull_poly, closed=True, facecolor="#FEF08A", edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
+            for px, py in hull_poly:
+                all_x.append(px)
+                all_y.append(py)
 
         if force_rivers and all_x and all_y:
             for r_name, pts in GUJARAT_RIVERS_GEO:
@@ -1065,7 +1176,6 @@ def is_scientific_diagram_request(query_text):
     ))
 
 async def generate_nano_banana_image_async(query_text, api_keys):
-    """Nano Banana (gemini-2.5-flash-image) વડે ટેક્સ્ટ પરથી શૈક્ષણિક ચિત્ર બનાવે છે."""
     if not HAS_GENAI or not api_keys:
         return None
     prompt = (
@@ -1090,7 +1200,6 @@ async def generate_nano_banana_image_async(query_text, api_keys):
     return None
 
 async def generate_clean_drawing_async(query_text, api_keys):
-    # ૧. પહેલા ખાસ વિજ્ઞાન આકૃતિ હોય તો Curated અથવા Vector SVG
     if is_scientific_diagram_request(query_text):
         curated = get_curated_textbook_svg(query_text)
         if curated:
@@ -1119,7 +1228,6 @@ async def generate_clean_drawing_async(query_text, api_keys):
                     except Exception:
                         pass
 
-    # ૨. કોઈપણ ચિત્ર / પ્રાણી / વાર્તા / દ્રશ્ય માટે Nano Banana (gemini-2.5-flash-image)
     nb_img = await generate_nano_banana_image_async(query_text, api_keys)
     if nb_img:
         return nb_img
@@ -1165,7 +1273,7 @@ def wants_map(text):
         "નકશો", "નક્શો", "નકશા", "નક્શા", "નકશાપૂર્તિ", "naksho", "naksha", "map",
         "સંજ્ઞા વડે", "નકશામાં દર્શાવો", "કિલ્લા", "મગધ", "પ્રદેશો",
         "રાજકીય", "ભૌગોલિક", "ગામનો", "gamno", "gamda", "ખેત ઉત્પાદન", "ઉદ્યોગો", "નદીઓ", "મતદાર", "વસ્તી ગણતરી", "blo"
-    ))
+    )) or len(extract_mentioned_districts(text)) > 0
 
 def wants_any_drawing_or_diagram(text):
     t = (text or "").lower()
@@ -1411,7 +1519,6 @@ async def process_teacher_query(clean_q: str, elements: list):
     grade, subject, local_pdf_paths = resolve_grade_subject_and_pdfs(clean_q, syllabus_data)
     has_image_att = len(user_att_parts) > 0
 
-    # સ્પષ્ટ રૂટિંગ: નકશો, આલેખ, ભૂમિતિ, અને ચિત્ર/આકૃતિ ચારેય સ્વતંત્ર રીતે ચાલશે!
     is_map_q = wants_map(clean_q)
     is_graph_q = (wants_graph(clean_q) or has_image_att) and not is_map_q
     math_svg_code = build_math_fraction_svg(clean_q) if (not is_map_q and not is_graph_q) else None
@@ -1437,7 +1544,7 @@ async def process_teacher_query(clean_q: str, elements: list):
         visual_instruction += (
             "\n**નકશા (MAP) માટેની સૂચના:** પ્રશ્ન મુજબ સાચો ```map_json બ્લોક ફરજિયાત આપો:\n"
             "```map_json\n"
-            '{"region": "gujarat", "only_selected": true, "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો", "show_rivers": true, "highlights": [{"place": "મહેસાણા", "label": "મહેસાણા", "color": "#FEF08A"}], "pins": [{"name": "મહેસાણા", "lat": 23.588, "lon": 72.369, "type": "taluka"}, {"name": "પલાજ", "lat": 23.553, "lon": 72.426, "type": "village"}]}\n'
+            '{"region": "gujarat", "only_selected": true, "header_top": "સામાજિક વિજ્ઞાન - નકશા પૂર્તિ", "title": "જિલ્લાના તાલુકા મથકો અને મુખ્ય ગામો", "show_rivers": true, "highlights": [{"place": "પાટણ", "label": "પાટણ", "color": "#FEF08A"}], "pins": [{"name": "પાટણ", "lat": 23.849, "lon": 72.126, "type": "taluka"}, {"name": "સિદ્ધપુર", "lat": 23.918, "lon": 72.373, "type": "taluka"}]}\n'
             "```"
         )
     elif is_drawing_q:
