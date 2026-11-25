@@ -1,7 +1,6 @@
 import os
 import glob
 import sqlite3
-import subprocess
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -154,8 +153,10 @@ ACTIVE_MODELS = [
     "gemini-2.5-flash-lite",
 ]
 
-DEFAULT_IMAGE_MODELS = [
+# Nano Banana (Gemini Native Image Generation)
+NANO_BANANA_MODELS = [
     "gemini-2.5-flash-image",
+    "gemini-2.0-flash-exp-image-generation",
 ]
 
 _CLIENT_CACHE = {}
@@ -331,7 +332,7 @@ def load_syllabus():
     return _SYLLABUS_CACHE
 
 # ==============================================================================
-# SCHOOL GRAPH PAPER & CHART ENGINE (LINE GRAPH, BAR GRAPH, PIE CHART, POINTS)
+# 1. SCHOOL GRAPH PAPER & CHART ENGINE (LINE GRAPH, BAR GRAPH, PIE CHART, POINTS)
 # ==============================================================================
 def render_school_graph_png(spec):
     if not HAS_MPL:
@@ -367,7 +368,7 @@ def render_school_graph_png(spec):
     fig.patch.set_facecolor("#F8FAFC")
 
     ax = fig.add_axes([0.11, 0.14, 0.83, 0.72])
-    ax.set_facecolor("#F0FDF4")  # આછો ગ્રાફ પેપર લીલો રંગ
+    ax.set_facecolor("#F0FDF4")
 
     fig.text(0.52, 0.94, title, ha="center", va="center", color="#1E3A8A", fontproperties=fp_title)
     if scale_text:
@@ -408,7 +409,6 @@ def render_school_graph_png(spec):
                 lbl.set_fontproperties(fp_small)
 
     else:
-        # LINE GRAPH / SCATTER POINTS ON GRAPH PAPER
         try:
             xs = [float(v) for v in x_vals]
             is_numeric_x = True
@@ -487,7 +487,7 @@ def extract_or_build_graph_bytes(content):
     return graph_img_bytes, clean_text
 
 # ==============================================================================
-# REAL GIS MAP ENGINE + DISTRICT TALUKA & VILLAGE PINS ENGINE
+# 2. REAL GIS MAP ENGINE + OFFLINE FALLBACK BOUNDARIES + TALUKA & VILLAGE PINS
 # ==============================================================================
 GUJ_DIST_KEYWORDS = {
     "મહેસાણા": "મહેસાણા", "mahesana": "મહેસાણા", "mehsana": "મહેસાણા",
@@ -549,6 +549,16 @@ DISTRICT_BUILTIN_PINS = {
         {"name": "સુંઢિયા", "lon": 72.5780, "lat": 23.8210, "type": "village"},
         {"name": "કુકસ", "lon": 72.4150, "lat": 23.6350, "type": "village"},
         {"name": "લડાલ", "lon": 72.6850, "lat": 23.6320, "type": "village"},
+    ]
+}
+
+# ઓફલાઈન બેકઅપ સરહદ (જો Render પર GeoJSON ડાઉનલોડ ફેલ થાય તો પણ નકશો ખાલી ન રહે!)
+OFFLINE_DISTRICT_POLYGONS = {
+    "મહેસાણા": [
+        [71.95, 23.45], [72.02, 23.62], [72.22, 23.68], [72.32, 23.85],
+        [72.52, 23.95], [72.72, 24.08], [72.83, 23.96], [72.78, 23.78],
+        [72.82, 23.54], [72.66, 23.44], [72.48, 23.36], [72.38, 23.21],
+        [72.22, 23.25], [72.18, 23.40], [71.95, 23.45]
     ]
 }
 
@@ -672,7 +682,7 @@ def load_real_geojson(kind="gujarat"):
     for u in urls:
         try:
             req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=22) as resp:
                 raw = json.loads(resp.read().decode("utf-8"))
                 if kind == "gujarat":
                     guj_feats = []
@@ -897,8 +907,8 @@ def render_textbook_map_png(spec, raw_query=""):
 
     elif region == "gujarat":
         geo = load_real_geojson("gujarat")
+        all_x, all_y = [], []
         if geo and geo.get("features"):
-            all_x, all_y = [], []
             for idx_d, feat in enumerate(geo["features"]):
                 props = feat.get("properties") or {}
                 raw_dist = str(props.get("NAME_2") or props.get("DISTRICT") or props.get("dtname") or props.get("district") or "").strip()
@@ -923,38 +933,50 @@ def render_textbook_map_png(spec, raw_query=""):
                     cx, cy = _polygon_centroid(biggest)
                     map_ax.text(cx, cy, guj_name, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl if (only_selected or matched_hl) else fp_small)
 
-            if force_rivers and all_x and all_y:
-                for r_name, pts in GUJARAT_RIVERS_GEO:
-                    xs, ys = zip(*pts)
-                    if only_selected:
-                        if not any((min(all_x) - 0.1 <= x <= max(all_x) + 0.1 and min(all_y) - 0.1 <= y <= max(all_y) + 0.1) for x, y in pts):
-                            continue
-                    map_ax.plot(xs, ys, color="#0284C7", linewidth=2.2, alpha=0.8)
-                    map_ax.text(xs[1], ys[1] + 0.03, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_small)
+        # ઓફલાઈન ફોલબેક: જો GeoJSON ફેલ થાય તો બિલ્ટ-ઇન જિલ્લા સરહદ દોરો (ક્યારેય ખાલી બોક્સ નહીં આવે!)
+        if not all_x:
+            for d_name in (mentioned_dists or list(hl_map.keys())):
+                if d_name in OFFLINE_DISTRICT_POLYGONS:
+                    poly = OFFLINE_DISTRICT_POLYGONS[d_name]
+                    map_ax.add_patch(patches.Polygon(poly, closed=True, facecolor="#FEF08A", edgecolor="#B91C1C", linewidth=2.4, alpha=0.96, joinstyle="round"))
+                    for px, py in poly:
+                        all_x.append(px)
+                        all_y.append(py)
 
-            if pins_to_draw:
-                for p in pins_to_draw:
-                    px, py = p["lon"], p["lat"]
-                    is_taluka = p.get("type") == "taluka"
-                    if is_taluka:
-                        map_ax.scatter([px], [py], s=75, marker="*", color="#DC2626", edgecolor="#0F172A", linewidth=0.7, zorder=6)
-                        map_ax.text(px, py + 0.014, p["name"], ha="center", va="bottom", color="#991B1B", fontproperties=fp_lbl,
-                                    bbox=dict(boxstyle="round,pad=0.12", facecolor="#FFFFFF", edgecolor="none", alpha=0.75), zorder=7)
-                    else:
-                        map_ax.scatter([px], [py], s=26, marker="o", color="#1D4ED8", edgecolor="#FFFFFF", linewidth=0.6, zorder=5)
-                        map_ax.text(px, py - 0.012, p["name"], ha="center", va="top", color="#1E3A8A", fontproperties=fp_small,
-                                    bbox=dict(boxstyle="round,pad=0.08", facecolor="#FFFFFF", edgecolor="none", alpha=0.68), zorder=6)
+        if force_rivers and all_x and all_y:
+            for r_name, pts in GUJARAT_RIVERS_GEO:
+                xs, ys = zip(*pts)
+                if only_selected:
+                    if not any((min(all_x) - 0.15 <= x <= max(all_x) + 0.15 and min(all_y) - 0.15 <= y <= max(all_y) + 0.15) for x, y in pts):
+                        continue
+                map_ax.plot(xs, ys, color="#0284C7", linewidth=2.2, alpha=0.8)
+                map_ax.text(xs[1], ys[1] + 0.03, r_name, ha="center", va="center", color="#0369A1", fontproperties=fp_small)
 
-            if all_x and all_y:
-                dx = max((max(all_x) - min(all_x)) * 0.14, 0.15)
-                dy = max((max(all_y) - min(all_y)) * 0.14, 0.15)
-                map_ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
-                map_ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
-                map_ax.set_aspect("equal", adjustable="datalim")
-                if not only_selected:
-                    map_ax.text(69.5, 22.65, "કચ્છનો અખાત", ha="center", va="center", color="#0369A1", fontproperties=fp_small)
-                    map_ax.text(72.35, 21.45, "ખંભાતનો અખાત", ha="center", va="center", color="#0369A1", fontproperties=fp_small)
-                    map_ax.text(70.2, 20.45, "અરબ સાગર", ha="center", va="center", color="#0369A1", fontproperties=fp_lbl)
+        if pins_to_draw:
+            for p in pins_to_draw:
+                px, py = p["lon"], p["lat"]
+                all_x.append(px)
+                all_y.append(py)
+                is_taluka = p.get("type") == "taluka"
+                if is_taluka:
+                    map_ax.scatter([px], [py], s=75, marker="*", color="#DC2626", edgecolor="#0F172A", linewidth=0.7, zorder=6)
+                    map_ax.text(px, py + 0.014, p["name"], ha="center", va="bottom", color="#991B1B", fontproperties=fp_lbl,
+                                bbox=dict(boxstyle="round,pad=0.12", facecolor="#FFFFFF", edgecolor="none", alpha=0.75), zorder=7)
+                else:
+                    map_ax.scatter([px], [py], s=26, marker="o", color="#1D4ED8", edgecolor="#FFFFFF", linewidth=0.6, zorder=5)
+                    map_ax.text(px, py - 0.012, p["name"], ha="center", va="top", color="#1E3A8A", fontproperties=fp_small,
+                                bbox=dict(boxstyle="round,pad=0.08", facecolor="#FFFFFF", edgecolor="none", alpha=0.68), zorder=6)
+
+        if all_x and all_y:
+            dx = max((max(all_x) - min(all_x)) * 0.14, 0.15)
+            dy = max((max(all_y) - min(all_y)) * 0.14, 0.15)
+            map_ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
+            map_ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
+            map_ax.set_aspect("equal", adjustable="datalim")
+            if not only_selected:
+                map_ax.text(69.5, 22.65, "કચ્છનો અખાત", ha="center", va="center", color="#0369A1", fontproperties=fp_small)
+                map_ax.text(72.35, 21.45, "ખંભાતનો અખાત", ha="center", va="center", color="#0369A1", fontproperties=fp_small)
+                map_ax.text(70.2, 20.45, "અરબ સાગર", ha="center", va="center", color="#0369A1", fontproperties=fp_lbl)
 
     map_ax.text(0.95, 0.94, "ઉત્તર", transform=map_ax.transAxes, ha="center", va="center", color="#0F172A", fontproperties=fp_lbl)
     map_ax.annotate("", xy=(0.95, 0.91), xytext=(0.95, 0.80), xycoords="axes fraction", textcoords="axes fraction", arrowprops=dict(arrowstyle="->", lw=2.2, color="#0F172A"))
@@ -993,7 +1015,7 @@ def render_textbook_map_png(spec, raw_query=""):
     return buf.getvalue()
 
 # ==============================================================================
-# NCERT/GCERT TEXTBOOK DIAGRAM ENGINE (CURATED + REALISTIC VECTOR SVG)
+# 3. NCERT/GCERT TEXTBOOK SVG DIAGRAM + NANO BANANA IMAGE GENERATION ENGINE
 # ==============================================================================
 def get_curated_textbook_svg(query_text):
     q = (query_text or "").lower()
@@ -1001,18 +1023,13 @@ def get_curated_textbook_svg(query_text):
         return '''<svg width="740" height="450" viewBox="0 0 740 450" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)">
   <defs>
     <linearGradient id="skinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#DBEAFE"/>
-      <stop offset="60%" stop-color="#93C5FD"/>
-      <stop offset="100%" stop-color="#60A5FA"/>
+      <stop offset="0%" stop-color="#DBEAFE"/><stop offset="60%" stop-color="#93C5FD"/><stop offset="100%" stop-color="#60A5FA"/>
     </linearGradient>
     <linearGradient id="cartilageGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#BFDBFE"/>
-      <stop offset="50%" stop-color="#93C5FD"/>
-      <stop offset="100%" stop-color="#3B82F6"/>
+      <stop offset="0%" stop-color="#BFDBFE"/><stop offset="50%" stop-color="#93C5FD"/><stop offset="100%" stop-color="#3B82F6"/>
     </linearGradient>
     <linearGradient id="handGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#E2E8F0"/>
-      <stop offset="100%" stop-color="#CBD5E1"/>
+      <stop offset="0%" stop-color="#E2E8F0"/><stop offset="100%" stop-color="#CBD5E1"/>
     </linearGradient>
   </defs>
   <rect width="740" height="450" rx="12" fill="#FFFFFF"/>
@@ -1039,37 +1056,74 @@ def get_curated_textbook_svg(query_text):
 </svg>'''
     return None
 
-async def generate_clean_drawing_async(query_text, api_keys, is_infographic_map=False):
-    if not is_infographic_map:
+def is_scientific_diagram_request(query_text):
+    q = (query_text or "").lower()
+    return any(w in q for w in (
+        "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "diagram",
+        "કંઠસ્થાન", "કંઠસ્થન", "સ્વરપેટી", "larynx", "કોષ", "પ્રકાશસંશ્લેષણ",
+        "વિદ્યુત", "પરિપથ", "ચુંબક", "હૃદય", "ફેફસાં", "પાચનતંત્ર", "શ્વસનતંત્ર", "પરાગનયન", "પુષ્પ"
+    ))
+
+async def generate_nano_banana_image_async(query_text, api_keys):
+    """Nano Banana (gemini-2.5-flash-image) વડે ટેક્સ્ટ પરથી શૈક્ષણિક ચિત્ર બનાવે છે."""
+    if not HAS_GENAI or not api_keys:
+        return None
+    prompt = (
+        f"Create a clean, colorful, child-friendly Indian elementary school (Grades 3-8) textbook illustration for: {query_text}. "
+        "Make it bright, clear, educational, accurate, with a clean white or soft pastel background and zero garbled text."
+    )
+    for key in api_keys:
+        client = get_cached_client(key)
+        for img_mod in NANO_BANANA_MODELS:
+            try:
+                res = await client.aio.models.generate_content(
+                    model=img_mod,
+                    contents=[prompt],
+                    config=types.GenerateContentConfig(response_modalities=["IMAGE"])
+                )
+                for cand in (res.candidates or []):
+                    for part in (cand.content.parts or []):
+                        if getattr(part, "inline_data", None) and part.inline_data.data:
+                            return ("png", part.inline_data.data)
+            except Exception:
+                continue
+    return None
+
+async def generate_clean_drawing_async(query_text, api_keys):
+    # ૧. પહેલા ખાસ વિજ્ઞાન આકૃતિ હોય તો Curated અથવા Vector SVG
+    if is_scientific_diagram_request(query_text):
         curated = get_curated_textbook_svg(query_text)
         if curated:
             return ("svg", curated)
 
-    if not HAS_GENAI or not api_keys:
-        return None
+        if HAS_GENAI and api_keys:
+            svg_prompt = (
+                f"Create a detailed, realistic Indian NCERT / GCERT Class 3-8 Science textbook SVG diagram (width='740' height='450' viewBox='0 0 740 450') for: {query_text}.\n"
+                "STRICT RULES:\n"
+                "1. Output ONLY raw <svg width='740' height='450' viewBox='0 0 740 450' xmlns='[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)'>...</svg>.\n"
+                "2. White background <rect width='740' height='450' rx='12' fill='#FFFFFF'/> and inner border <rect x='24' y='20' width='692' height='365' rx='6' fill='#F8FAFC' stroke='#475569' stroke-width='1.8'/>.\n"
+                "3. Draw realistic anatomical/scientific curves using smooth cubic Bezier <path d='... C ...'> with <linearGradient> shading.\n"
+                "4. Add pointer lines with arrowheads and clear Gujarati part labels (font-size='16' font-weight='bold' fill='#0F172A') strictly inside x=45..690, y=45..370.\n"
+                "5. Put the textbook caption at the bottom: <text x='370' y='422' text-anchor='middle' font-size='18' font-weight='bold' fill='#0F172A'>[આકૃતિ : ...]</text>."
+            )
+            for key in api_keys:
+                client = get_cached_client(key)
+                models_list = await asyncio.to_thread(get_working_models_for_key, key, "gemini-2.5-flash")
+                for mod in models_list:
+                    try:
+                        res = await client.aio.models.generate_content(model=mod, contents=[svg_prompt])
+                        raw = (res.text or "").strip()
+                        m = re.search(r"(<svg[\s\S]*?</svg>)", raw, flags=re.IGNORECASE)
+                        if m:
+                            return ("svg", m.group(1))
+                    except Exception:
+                        pass
 
-    if not is_infographic_map:
-        svg_prompt = (
-            f"Create a detailed, realistic Indian NCERT / GCERT Class 3-8 Science textbook SVG diagram (width='740' height='450' viewBox='0 0 740 450') for: {query_text}.\n"
-            "STRICT RULES:\n"
-            "1. Output ONLY raw <svg width='740' height='450' viewBox='0 0 740 450' xmlns='[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)'>...</svg>.\n"
-            "2. White background <rect width='740' height='450' rx='12' fill='#FFFFFF'/> and inner border <rect x='24' y='20' width='692' height='365' rx='6' fill='#F8FAFC' stroke='#475569' stroke-width='1.8'/>.\n"
-            "3. Draw realistic anatomical/scientific curves using smooth cubic Bezier <path d='... C ...'> with <linearGradient> shading.\n"
-            "4. Add pointer lines with arrowheads and clear Gujarati part labels (font-size='16' font-weight='bold' fill='#0F172A') strictly inside x=45..690, y=45..370.\n"
-            "5. Put the textbook caption at the bottom: <text x='370' y='422' text-anchor='middle' font-size='18' font-weight='bold' fill='#0F172A'>[આકૃતિ : ...]</text>."
-        )
-        for key in api_keys:
-            client = get_cached_client(key)
-            models_list = await asyncio.to_thread(get_working_models_for_key, key, "gemini-2.5-flash")
-            for mod in models_list:
-                try:
-                    res = await client.aio.models.generate_content(model=mod, contents=[svg_prompt])
-                    raw = (res.text or "").strip()
-                    m = re.search(r"(<svg[\s\S]*?</svg>)", raw, flags=re.IGNORECASE)
-                    if m:
-                        return ("svg", m.group(1))
-                except Exception:
-                    pass
+    # ૨. કોઈપણ ચિત્ર / પ્રાણી / વાર્તા / દ્રશ્ય માટે Nano Banana (gemini-2.5-flash-image)
+    nb_img = await generate_nano_banana_image_async(query_text, api_keys)
+    if nb_img:
+        return nb_img
+
     return None
 
 def build_math_fraction_svg(query_text):
@@ -1118,8 +1172,8 @@ def wants_any_drawing_or_diagram(text):
     return any(kw in t for kw in (
         "આકૃતિ", "akruti", "aakruti", "નામનિર્દેશ", "ચિત્ર", "chitra", "chira", "chitran",
         "દોરો", "દોરી", "doro", "dori", "બનાવો", "banavo", "banavi",
-        "diagram", "draw", "drawing", "sketch", "image", "picture", "photo", "painting",
-        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "કંઠસ્થન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં"
+        "diagram", "draw", "drawing", "sketch", "image", "picture", "photo", "painting", "nano banana",
+        "બાળક", "balak", "ગાય", "gay", "cow", "ફૂલ", "ful", "પ્રાણી", "પક્ષી", "વાંદરો", "વાંદરા", "monkey", "કોષ", "પ્રકાશસંશ્લેષણ", "સફરજન", "કેળું", "દ્રાક્ષ", "કંઠસ્થાન", "કંઠસ્થન", "larynx", "સ્વરપેટી", "હૃદય", "ફેફસાં", "મંદિર", "સૂર્ય", "વૃક્ષ"
     ))
 
 def needs_textbook_vision(text):
@@ -1356,17 +1410,19 @@ async def process_teacher_query(clean_q: str, elements: list):
     syllabus_data = load_syllabus()
     grade, subject, local_pdf_paths = resolve_grade_subject_and_pdfs(clean_q, syllabus_data)
     has_image_att = len(user_att_parts) > 0
-    is_graph_q = wants_graph(clean_q) or has_image_att
-    is_map_q = wants_map(clean_q) and not wants_graph(clean_q)
-    math_svg_code = build_math_fraction_svg(clean_q) if (not is_map_q and not wants_graph(clean_q)) else None
-    is_drawing_q = wants_any_drawing_or_diagram(clean_q) and not is_map_q and not math_svg_code and not wants_graph(clean_q)
+
+    # સ્પષ્ટ રૂટિંગ: નકશો, આલેખ, ભૂમિતિ, અને ચિત્ર/આકૃતિ ચારેય સ્વતંત્ર રીતે ચાલશે!
+    is_map_q = wants_map(clean_q)
+    is_graph_q = (wants_graph(clean_q) or has_image_att) and not is_map_q
+    math_svg_code = build_math_fraction_svg(clean_q) if (not is_map_q and not is_graph_q) else None
+    is_drawing_q = wants_any_drawing_or_diagram(clean_q) and not is_map_q and not is_graph_q and not math_svg_code
 
     recent_hist = "\n".join(f"{'વિદ્યાર્થી' if m['role']=='user' else 'શિક્ષક'}: {m['content']}" for m in messages[:-1][-3:])
     book_page_parts = await asyncio.to_thread(build_vision_pdf_parts, local_pdf_paths[0]) if (local_pdf_paths and needs_textbook_vision(clean_q)) else []
 
     img_task = None
     if is_drawing_q:
-        img_task = asyncio.create_task(generate_clean_drawing_async(clean_q, api_keys, is_infographic_map=False))
+        img_task = asyncio.create_task(generate_clean_drawing_async(clean_q, api_keys))
 
     visual_instruction = ""
     if is_graph_q:
@@ -1385,7 +1441,7 @@ async def process_teacher_query(clean_q: str, elements: list):
             "```"
         )
     elif is_drawing_q:
-        visual_instruction += "\n**આકૃતિ માટેની સૂચના:** ઉપર પાઠ્યપુસ્તકની આકૃતિ આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી અને કાર્ય ગુજરાતીમાં આપો."
+        visual_instruction += "\n**ચિત્ર / આકૃતિ માટેની સૂચના:** ઉપર પાઠ્યપુસ્તકનું ચિત્ર/આકૃતિ આપમેળે દોરાઈને દેખાશે, તેથી ટેક્સ્ટમાં dot/dash વાળી ASCII આકૃતિ ન બનાવશો — ફક્ત નીચે મુદ્દાસર સમજૂતી ગુજરાતીમાં આપો."
 
     sys_prompt = f"તમે ધોરણ 3 થી 8 ના વિદ્યાર્થીઓ અને શિક્ષકો માટેના ઝડપી અને નિષ્ણાત AI સહાયક છો. જવાબ શુદ્ધ ગુજરાતીમાં, ત્વરિત અને મુદ્દાસર આપો.{visual_instruction}"
     prompt_text = f"{sys_prompt}\n\n{recent_hist}\nપ્રશ્ન: {clean_q}"
@@ -1431,7 +1487,7 @@ async def process_teacher_query(clean_q: str, elements: list):
     computed_graph_bytes, clean_text = await asyncio.to_thread(extract_or_build_graph_bytes, answer_text)
 
     computed_map_bytes = None
-    if is_map_q and not computed_graph_bytes and not generated_img_bytes and not generated_svg_code:
+    if is_map_q:
         computed_map_bytes, clean_text = await asyncio.to_thread(
             extract_or_build_map_bytes, clean_text, True, clean_q
         )
@@ -1439,20 +1495,24 @@ async def process_teacher_query(clean_q: str, elements: list):
         clean_text = re.sub(r"```map_json[\s\S]*?```", "", clean_text)
 
     msg_elements = []
-    if computed_graph_bytes:
+    if computed_map_bytes:
+        msg_elements.append(cl.Image(name="palaj_map.png", content=computed_map_bytes, display="inline"))
+    elif computed_graph_bytes:
         msg_elements.append(cl.Image(name="palaj_graph.png", content=computed_graph_bytes, display="inline"))
     elif generated_svg_code:
         msg_elements.append(make_svg_or_png_element(generated_svg_code, "palaj_diagram"))
-    elif generated_img_bytes or computed_map_bytes:
-        msg_elements.append(cl.Image(name="palaj_visual.png", content=(generated_img_bytes or computed_map_bytes), display="inline"))
+    elif generated_img_bytes:
+        msg_elements.append(cl.Image(name="palaj_illustration.png", content=generated_img_bytes, display="inline"))
     elif math_svg_code:
         msg_elements.append(make_svg_or_png_element(math_svg_code, "math_diagram"))
 
     badge = ""
-    if computed_graph_bytes:
-        badge = "📊 *ગ્રાફ પેપર પર દોરેલો સચોટ આલેખ (Graph)*\n\n"
-    elif is_map_q:
+    if computed_map_bytes:
         badge = "🗺️ *પાઠ્યપુસ્તક શૈલીનો રાજકીય અને ભૌગોલિક નકશો*\n\n"
+    elif computed_graph_bytes:
+        badge = "📊 *ગ્રાફ પેપર પર દોરેલો સચોટ આલેખ (Graph)*\n\n"
+    elif generated_img_bytes:
+        badge = "🎨 *શૈક્ષણિક ચિત્ર (AI Illustration)*\n\n"
     elif grade and subject and local_pdf_paths:
         badge = f"📖 *ધોરણ {grade} | {_SUBJECT_LABELS.get(subject, subject)}*\n\n"
 
