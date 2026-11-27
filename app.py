@@ -151,18 +151,23 @@ def resolve_grade_subject_and_pdfs(current_query, syllabus):
                         matched.append(path)
                 break
     elif subject and not grade:
-        # જો ધોરણ ન લખ્યું હોય પણ વિષય લખ્યો હોય (દા.ત. "પ્રકાશસંશ્લેષણ"), તો તે વિષયની બધી PDF શોધો
-        for g_key, g_val in syllabus.items():
+        # ધોરણ ન લખ્યું હોય તો માત્ર 1 જ મુખ્ય PDF લો જેથી API ક્વોટા ન વપરાય
+        for g_key in ["ધોરણ 7", "ધોરણ 6", "ધોરણ 8", "ધોરણ 5", "ધોરણ 4", "ધોરણ 3"]:
+            g_val = syllabus.get(g_key) or {}
             for _label, info in (g_val.get("subjects") or {}).items():
                 if info.get("code") == subject:
                     for p in info.get("local_pdfs") or []:
                         path = p.replace("\\", "/")
                         if os.path.exists(path) and path not in matched:
                             matched.append(path)
-    return grade, subject, matched[:3]
+                    if matched:
+                        break
+            if matched:
+                break
+    return grade, subject, matched[:1]
 
 # ==============================================================================
-# VECTOR SEARCH / EMBEDDING RAG ENGINE (Gemini text-embedding-004 + Cosine Sim)
+# VECTOR SEARCH / EMBEDDING RAG ENGINE (Gemini text-embedding-004 + Rate-Limit Safe)
 # ==============================================================================
 def _cosine_similarity(v1, v2):
     if not v1 or not v2 or len(v1) != len(v2):
@@ -207,13 +212,11 @@ def _get_or_build_pdf_vector_index(pdf_path, api_keys):
         except Exception:
             pass
 
-    # PDF માંથી દરેક પાનાનું ટેક્સ્ટ કાઢો
     pages_data = []
     try:
         with fitz.open(abspath) as doc:
             for idx in range(len(doc)):
                 txt = (doc[idx].get_text("text") or "").strip()
-                # જો પાનું સ્કેન કરેલું હોય અને ટેક્સ્ટ ઓછું હોય તો પાનાનો નંબર રાખો
                 embed_txt = txt[:2000] if len(txt) > 20 else f"પાઠ્યપુસ્તક પાના નંબર {idx + 1}"
                 pages_data.append({"page_idx": idx, "text": txt[:2500], "embed_input": embed_txt})
     except Exception:
@@ -222,7 +225,6 @@ def _get_or_build_pdf_vector_index(pdf_path, api_keys):
     if not pages_data:
         return []
 
-    # Batch માં Embeddings જનરેટ કરો (ઝડપી અને API બચત માટે 20-20 ના જૂથમાં)
     indexed_chunks = []
     batch_size = 20
     for start in range(0, len(pages_data), batch_size):
@@ -249,14 +251,15 @@ def _get_or_build_pdf_vector_index(pdf_path, api_keys):
             except Exception:
                 continue
         if not embedded_ok:
-            # જો API ક્વોટા પૂરો હોય તો fallback તરીકે માત્ર ટેક્સ્ટ સાચવો
-            for item in batch:
+            # જો API ક્વોટા પૂરો હોય તો આગળ API કોલ બંધ કરી સીધું Local Text Index વાપરો
+            for rem_item in pages_data[start:]:
                 indexed_chunks.append({
                     "pdf_path": abspath,
-                    "page_idx": item["page_idx"],
-                    "text": item["text"],
+                    "page_idx": rem_item["page_idx"],
+                    "text": rem_item["text"],
                     "embedding": [],
                 })
+            break
 
     try:
         with open(cache_file, "w", encoding="utf-8") as f:
@@ -283,17 +286,15 @@ def search_textbook_rag(query_text, pdf_paths, api_keys, top_k=3):
         chunks = _get_or_build_pdf_vector_index(pdf_p, api_keys)
         for ch in chunks:
             vec_score = _cosine_similarity(q_emb, ch.get("embedding")) if (q_emb and ch.get("embedding")) else 0.0
-            # ગુજરાતી શબ્દો માટે Keyword Match Boost
             txt_low = (ch.get("text") or "").lower()
             kw_hits = sum(1 for w in q_words if w in txt_low)
-            kw_score = min(0.35, kw_hits * 0.08)
+            kw_score = min(0.45, kw_hits * 0.10)
             total_score = vec_score + kw_score
             scored_pages.append((total_score, ch))
 
     scored_pages.sort(key=lambda x: x[0], reverse=True)
-    top_chunks = [item[1] for item in scored_pages[:top_k] if item[0] > 0.15]
+    top_chunks = [item[1] for item in scored_pages[:top_k] if item[0] > 0.08]
 
-    # જો કોઈ સ્કોર ન મળે તો પહેલા 2 પાનાં લો
     if not top_chunks and scored_pages:
         top_chunks = [item[1] for item in scored_pages[:2]]
 
@@ -345,7 +346,6 @@ def needs_web_search(text, has_rag_context):
     )
     if any(k in t for k in gk_keywords):
         return True
-    # જો પાઠ્યપુસ્તકની PDF ન મળી હોય અને આલેખ/નકશો/રોજનીશી ન હોય, તો Web Search ચાલુ રાખો
     if not has_rag_context:
         return True
     return False
@@ -589,7 +589,6 @@ async def process_teacher_query(clean_q: str, elements: list):
                     break
             except Exception as e:
                 last_err = e
-                # જો કોઈ મોડેલમાં tool સપોર્ટ ન કરે તો config વગર ફરી પ્રયાસ કરો
                 if gen_config is not None and "tool" in str(e).lower():
                     gen_config = None
                     used_tool_tag = ""
