@@ -158,7 +158,7 @@ def extract_or_build_rojnishi_docx(raw_text: str):
     doc.save(buf)
     buf.seek(0)
     return buf.getvalue(), clean_text
-    def ensure_thread_files_dir():
+def ensure_thread_files_dir():
     os.makedirs(".files", exist_ok=True)
     tid = cl.context.session.thread_id if getattr(cl.context, "session", None) else None
     if tid:
