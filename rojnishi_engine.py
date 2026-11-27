@@ -2,13 +2,12 @@ import os
 import re
 import io
 import json
-import fitz  # PyMuPDF
+import fitz
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 
-# શિક્ષક રોજનીશી / દૈનિક આયોજન માંગે છે કે નહીં તે ઓળખવા માટે
 def wants_rojnishi(text: str) -> bool:
     t = (text or "").lower()
     keywords = [
@@ -17,14 +16,11 @@ def wants_rojnishi(text: str) -> bool:
     ]
     return any(k in t for k in keywords)
 
-# teacher_data ફોલ્ડરમાંથી PDF વાંચીને સંદર્ભ ડેટા કાઢવો
 def load_teacher_reference_context(query: str) -> str:
     base_dir = "teacher_data"
     if not os.path.exists(base_dir):
         return ""
 
-    q_low = query.lower()
-    # ધોરણ મુજબ યોગ્ય PDF ફાઈલો શોધવી
     grade_match = re.search(r"([3-8])", query.translate(str.maketrans("૩૪૫૬૭૮", "345678")))
     grade = grade_match.group(1) if grade_match else ""
 
@@ -35,18 +31,23 @@ def load_teacher_reference_context(query: str) -> str:
                 continue
             fpath = os.path.join(root, fname)
             fl = fname.lower()
-            # Annual planner, calendar અને જે-તે ધોરણની Learning Outcome PDF પસંદ કરો
             if "annual" in fl or "calendar" in fl or "calender" in fl:
                 selected_pdfs.append(fpath)
-            elif grade and (grade in fl or "3to8" in fl or ("4to5" in fl and grade in ("4", "5")) or ("6to8" in fl and grade in ("6", "7", "8")) or ("7to8" in fl and grade in ("7", "8"))):
+            elif grade and (
+                grade in fl
+                or "3to8" in fl
+                or ("4to5" in fl and grade in ("4", "5"))
+                or ("6to8" in fl and grade in ("6", "7", "8"))
+                or ("7to8" in fl and grade in ("7", "8"))
+            ):
                 selected_pdfs.append(fpath)
 
     extracted_chunks = []
-    for pdf_path in selected_pdfs[:4]:  # ઝડપ જળવાઈ રહે તે માટે મહત્તમ 4 PDF
+    for pdf_path in selected_pdfs[:4]:
         try:
             with fitz.open(pdf_path) as doc:
                 text_buf = []
-                for page in doc[:8]:  # શરૂઆતના 8 પેજમાંથી મુખ્ય વિગતો
+                for page in doc[:8]:
                     txt = page.get_text("text").strip()
                     if txt:
                         text_buf.append(txt[:1500])
@@ -57,13 +58,12 @@ def load_teacher_reference_context(query: str) -> str:
 
     return "\n\n".join(extracted_chunks)[:10000]
 
-# AI જવાબમાંથી JSON કાઢીને તમારા ફોટા જેવી જ Word (.docx) ફાઈલ બનાવવી
 def extract_or_build_rojnishi_docx(raw_text: str):
-    match = re.search(r"```rojnishi_json\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+    match = re.search(r"```rojnishi_json\s*(\{[\s\S]*?\})\s*```", raw_text)
     if not match:
         return None, raw_text
 
-    clean_text = re.sub(r"```rojnishi_json\s*\{.*?\}\s*```", "", raw_text, flags=re.DOTALL).strip()
+    clean_text = re.sub(r"```rojnishi_json\s*\{[\s\S]*?\}\s*```", "", raw_text).strip()
     try:
         data = json.loads(match.group(1))
     except Exception:
@@ -86,7 +86,6 @@ def extract_or_build_rojnishi_docx(raw_text: str):
         if page_idx > 0:
             doc.add_page_break()
 
-        # ૧. ઉપરનું હેડર (ધોરણ/વર્ગ | દૈનિક આયોજન | તા./વાર)
         header_table = doc.add_table(rows=2, cols=3)
         header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         header_table.autofit = False
@@ -109,7 +108,6 @@ def extract_or_build_rojnishi_docx(raw_text: str):
 
         doc.add_paragraph("")
 
-        # ૨. મુખ્ય ૬ કોલમ અને ૧ થી ૮ તાસ વાળું ટેબલ
         table = doc.add_table(rows=9, cols=6)
         table.style = "Table Grid"
         table.autofit = False
@@ -126,7 +124,11 @@ def extract_or_build_rojnishi_docx(raw_text: str):
             r.bold = True
             r.font.size = Pt(10)
 
-        periods_map = {int(p.get("tas", idx + 1)): p for idx, p in enumerate(day_info.get("periods") or []) if str(p.get("tas", idx + 1)).isdigit()}
+        periods_map = {
+            int(p.get("tas", idx + 1)): p
+            for idx, p in enumerate(day_info.get("periods") or [])
+            if str(p.get("tas", idx + 1)).isdigit()
+        }
 
         for r_idx in range(8):
             tas_no = r_idx + 1
@@ -149,7 +151,6 @@ def extract_or_build_rojnishi_docx(raw_text: str):
 
         doc.add_paragraph("\n")
 
-        # ૩. નીચે સહીની જગ્યા
         sign_table = doc.add_table(rows=1, cols=2)
         sign_table.autofit = False
         sign_table.columns[0].width = Inches(3.75)
