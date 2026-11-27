@@ -25,6 +25,8 @@ from db_and_pdf import (
 )
 from graph_engine import wants_graph, extract_or_build_graph_bytes
 from map_engine import wants_map, load_real_geojson, extract_or_build_map_bytes
+from rojnishi_engine import wants_rojnishi, load_teacher_reference_context, extract_or_build_rojnishi_docx
+
 from drawing_engine import (
     wants_any_drawing_or_diagram,
     build_math_fraction_svg,
